@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cursor Bridge — Login</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="page-login">
+    <main class="card">
+      <h1>Cursor Bridge</h1>
+      <p class="muted">Entre na sala compartilhada com seu nome e a senha do time.</p>
+      <form id="login-form">
+        <label for="displayName">Seu nome</label>
+        <input
+          id="displayName"
+          name="displayName"
+          type="text"
+          autocomplete="nickname"
+          maxlength="40"
+          required
+          autofocus
+          placeholder="Ex.: Ana"
+        />
+        <label for="password">Senha</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+        <button type="submit">Entrar na sala</button>
+        <p id="error" class="error" hidden></p>
+      </form>
+    </main>
+    <script>
+      const form = document.getElementById("login-form");
+      const errorEl = document.getElementById("error");
+      const savedName = localStorage.getItem("bridgeDisplayName") || "";
+      if (savedName) document.getElementById("displayName").value = savedName;
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errorEl.hidden = true;
+        const displayName = document.getElementById("displayName").value.trim();
+        const password = document.getElementById("password").value;
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, displayName }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          errorEl.textContent = data.error || "Falha no login";
+          errorEl.hidden = false;
+          return;
+        }
+        localStorage.setItem("bridgeDisplayName", displayName);
+        location.href = "/chat";
+      });
+    </script>
+  </body>
+</html>

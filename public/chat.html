@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cursor Bridge — Sala</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="page-chat">
+    <header class="topbar">
+      <div class="topbar-left">
+        <strong>Cursor Bridge</strong>
+        <span id="me-label" class="muted">Sala compartilhada</span>
+      </div>
+      <div class="topbar-right">
+        <span id="typing-label" class="status-pill typing-pill" hidden></span>
+        <span id="busy-label" class="status-pill" hidden></span>
+        <span id="presence-label" class="muted presence" title="Quem está online"></span>
+        <button id="logout" type="button" class="ghost">Sair</button>
+      </div>
+    </header>
+
+    <div class="chat-layout">
+      <div class="chat-column">
+        <main id="messages" class="messages" aria-live="polite"></main>
+      </div>
+
+      <aside class="live-panel" aria-label="Live áudio e vídeo">
+        <div class="live-head">
+          <strong>Live</strong>
+          <span id="live-status" class="muted live-status"></span>
+        </div>
+        <p class="muted live-hint">Áudio e vídeo na sala — sem Google Meet.</p>
+        <div id="live-tiles" class="live-tiles"></div>
+        <div class="live-controls">
+          <button id="live-join" type="button">Entrar no live</button>
+          <button id="live-leave" type="button" class="ghost" hidden>Sair</button>
+          <button id="live-mic" type="button" class="ghost" disabled>Mic</button>
+          <button id="live-cam" type="button" class="ghost" disabled>Câm</button>
+        </div>
+        <p id="live-roster" class="muted live-roster"></p>
+      </aside>
+    </div>
+
+    <div class="bottom-dock">
+      <div id="agent-activity" class="agent-activity" hidden>
+        <div class="agent-activity-head">
+          <span>Atividade do agente</span>
+          <span id="turn-clock" class="turn-clock muted"></span>
+        </div>
+        <pre id="agent-activity-body" class="agent-activity-body"></pre>
+      </div>
+
+      <form id="composer" class="composer">
+        <div id="file-chips" class="file-chips"></div>
+        <textarea
+          id="text"
+          rows="3"
+          placeholder="Escreva sua mensagem… (Shift+Enter para nova linha). Digitação espelhada ao vivo na sala."
+        ></textarea>
+        <div class="composer-actions">
+          <label class="file-btn">
+            Anexar
+            <input id="files" type="file" multiple hidden />
+          </label>
+          <button id="send" type="submit">Enviar</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="/chat.js" type="module"></script>
+  </body>
+</html>

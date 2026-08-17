@@ -1,0 +1,26 @@
+{
+  "name": "cursor-web-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Password-gated collaborative web room for a local Cursor Agent (CDP or SDK), shareable via Ngrok",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.27",
+    "@hono/node-server": "^1.14.4",
+    "dotenv": "^16.5.0",
+    "hono": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

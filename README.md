@@ -2,200 +2,200 @@
 
 > Password-gated collaborative web room for a **local Cursor Agent**. Point it at *your* workspace, share one agent session with the team, and work from the browser (or phone via Ngrok) without each person needing the IDE.
 
-Chat web local com senha, ligado ao **Cursor IDE via CDP** (padrão) ou a um agente `@cursor/sdk` (opcional). Qualquer time acopla o **próprio projeto** e trabalha em grupo no mesmo agente.
+A password-protected local web chat, connected to the **Cursor IDE via CDP** (default) or to a `@cursor/sdk` agent (optional). Any team attaches **their own project** and works together on the same agent.
 
-## O que é
+## What it is
 
-Uma sala compartilhada no navegador que fala com o **Cursor Agent que já está aberto** na máquina host.
+A shared browser room that talks to the **Cursor Agent already open** on the host machine.
 
-Não é um clone do chat do IDE e **não** sincroniza com outras janelas do Cursor. No modo CDP o painel injeta no composer do Agent visível e espelha a resposta. No modo SDK sobe uma sessão paralela (`Agent.create` / `Agent.resume`).
+It is not a clone of the IDE chat and it **does not** sync with other Cursor windows. In CDP mode the panel injects into the visible Agent composer and mirrors the reply. In SDK mode it starts a parallel session (`Agent.create` / `Agent.resume`).
 
-O que a sala oferece:
+What the room provides:
 
-- Login com **senha do time + nome de exibição**
-- Transcript único em tempo real (quem entra depois vê o histórico)
-- Digitação ao vivo no composer (last-writer-wins)
-- Live áudio/vídeo no painel (WebRTC mesh)
-- Atividade do agente (Exploring, tools, Planning) acima do composer
-- Downloads dos paths `/tmp/...` citados pelo agente
-- Um turno por vez — sem corrida no composer
+- Login with a **team password + display name**
+- A single real-time transcript (late joiners see history)
+- Live typing in the composer (last-writer-wins)
+- Live audio/video in the panel (WebRTC mesh)
+- Agent activity (Exploring, tools, Planning) above the composer
+- Downloads for `/tmp/...` paths the agent mentions
+- One turn at a time — no race on the composer
 
-Aponte `CURSOR_CWD` e `CURSOR_CDP_TARGET` para a pasta/janela do **seu** repositório. O bridge não assume um projeto específico.
+Point `CURSOR_CWD` and `CURSOR_CDP_TARGET` at the folder/window of **your** repository. The bridge does not assume a specific project.
 
-## Por que existe
+## Why it exists
 
-O Cursor Agent é forte no desktop de uma pessoa. O resto do time fica de fora: não vê o transcript, não manda o próximo prompt, não baixa o zip que o agente deixou em `/tmp`, e não acompanha as tools sem VNC, Meet ou “me manda um print”.
+The Cursor Agent is powerful on one person's desktop. Everyone else is locked out: they cannot see the transcript, send the next prompt, download the zip the agent left in `/tmp`, or follow tool activity without VNC, Meet, or “send me a screenshot”.
 
-Este projeto nasceu para **abrir essa sessão** — com senha — para quem precisa colaborar no mesmo agente, no mesmo workspace, sem cada um instalar o IDE ou gastar uma API key à parte.
+This project exists to **open that session** — behind a password — to anyone who needs to collaborate on the same agent, in the same workspace, without each person installing the IDE or spending a separate API key.
 
-## Onde colabora
+## Where it helps
 
-- **Pair / mob com um único agente** — um host deixa o Cursor aberto; o time dirige pelo painel
-- **Review e diagnóstico em grupo** — produto, suporte e dev veem a mesma investigação
-- **Onboarding** — alguém acompanha o agente sem instalar Cursor
-- **Plantão** — celular ou outro PC via Ngrok + senha
-- **Handoff** — o histórico da sala sobrevive a refresh e late join
+- **Pair / mob with a single agent** — one host keeps Cursor open; the team drives from the panel
+- **Group review and diagnosis** — product, support, and engineering see the same investigation
+- **Onboarding** — someone follows the agent without installing Cursor
+- **On-call** — phone or another PC via Ngrok + password
+- **Handoff** — room history survives refresh and late join
 
-## Vantagens
+## Advantages
 
-| Abordagem | O que você ganha | O que perde |
+| Approach | What you get | What you give up |
 | --- | --- | --- |
-| **Este bridge (CDP)** | Usa a sessão/assinatura do IDE; sala web própria; presença; live; artefatos | Precisa do Cursor aberto com debug port; seletores da UI podem mudar |
-| Só `@cursor/sdk` / API | Sessão paralela, sem mexer no IDE | API key; histórico separado do chat que você já estava usando |
-| Bridges CDP tipo Telegram (CursorRemote, Gantry, etc.) | Controlam o IDE local | Canal é o app de mensagem, não uma sala de time com live e downloads |
+| **This bridge (CDP)** | Uses the IDE session/subscription; own web room; presence; live; artifacts | Needs Cursor open with a debug port; UI selectors can change |
+| `@cursor/sdk` / API only | Parallel session, does not touch the IDE | API key; history separate from the chat you were already using |
+| Telegram-style CDP bridges (CursorRemote, Gantry, etc.) | Control the local IDE | The channel is a messenger app, not a team room with live A/V and downloads |
 
-Resumo: **um agente, um workspace, várias pessoas no browser**.
+In short: **one agent, one workspace, several people in the browser**.
 
-## Como funciona
+## How it works
 
 ```mermaid
 flowchart LR
-  browsers[Browsers_do_time] -->|HTTPS_ou_localhost| hono[Bridge_Hono]
-  hono -->|SSE_sala| browsers
-  hono -->|CDP_9222| cursor[Janela_Cursor]
-  cursor --> workspace[Seu_projeto]
+  browsers[Team_browsers] -->|HTTPS_or_localhost| hono[Bridge_Hono]
+  hono -->|SSE_room| browsers
+  hono -->|CDP_9222| cursor[Cursor_window]
+  cursor --> workspace[Your_project]
 ```
 
-1. O host sobe o bridge na máquina onde o Cursor está aberto.
-2. O Cursor precisa de `--remote-debugging-port=9222`.
-3. `CURSOR_CDP_TARGET` escolhe a janela cujo título contém o nome da pasta do workspace.
-4. `POST /api/chat` injeta o prompt no Agent e publica tokens no barramento da sala.
-5. Todos autenticados recebem o mesmo stream em `GET /api/events`.
+1. The host starts the bridge on the machine where Cursor is open.
+2. Cursor needs `--remote-debugging-port=9222`.
+3. `CURSOR_CDP_TARGET` selects the window whose title contains the workspace folder name.
+4. `POST /api/chat` injects the prompt into the Agent and publishes tokens on the room bus.
+5. Every authenticated client receives the same stream on `GET /api/events`.
 
 ## Quick start (local)
 
-Pré-requisitos: **Node.js 20+**, Cursor instalado, [Ngrok](https://ngrok.com/) se for expor para o time, comando `zip` no PATH (pastas em `/tmp` sem zip irmão).
+Prerequisites: **Node.js 20+**, Cursor installed, [Ngrok](https://ngrok.com/) if you will expose it to the team, and `zip` on PATH (folders under `/tmp` without a sibling zip).
 
 ```bash
-git clone https://github.com/<sua-conta>/cursor-web-bridge.git
+git clone https://github.com/glira/cursor-web-bridge.git
 cd cursor-web-bridge
 cp .env.example .env
 ```
 
-Edite o `.env`:
+Edit `.env`:
 
-- `BRIDGE_PASSWORD` — senha forte da sala
-- `BRIDGE_SESSION_SECRET` — segredo longo para o cookie
-- `CURSOR_CWD` — path **absoluto** do workspace que o agente deve usar
-- `CURSOR_CDP_TARGET` — nome que aparece no título da janela Cursor (em geral o nome da pasta)
+- `BRIDGE_PASSWORD` — a strong room password
+- `BRIDGE_SESSION_SECRET` — a long secret for the cookie
+- `CURSOR_CWD` — **absolute** path of the workspace the agent should use
+- `CURSOR_CDP_TARGET` — name that appears in the Cursor window title (usually the folder name)
 
 ```bash
 npm install
 npm run dev
-# ou: ./start-local.sh   (bridge + ngrok)
+# or: ./start-local.sh   (bridge + ngrok)
 ```
 
-Abra `http://127.0.0.1:8787`, entre com **nome + senha**, envie um prompt de teste.
+Open `http://127.0.0.1:8787`, sign in with **name + password**, and send a test prompt.
 
-### Ligar o Cursor (modo CDP, default)
+### Attach Cursor (CDP mode, default)
 
-A flag só vale no **primeiro** processo. Feche o Cursor por completo e abra de novo:
+The flag only applies to the **first** process. Fully quit Cursor and launch it again:
 
 ```bash
-# Linux (ajuste o binário / AppImage da sua instalação)
+# Linux (adjust the binary / AppImage for your install)
 cursor --no-sandbox \
   --remote-debugging-port=9222 \
   --remote-allow-origins=http://localhost:9222
 ```
 
-Depois:
+Then:
 
-1. **File → Open Folder** no workspace do projeto do time
-2. Abra um **Agent → New Chat** nessa janela (dedicado ao bridge)
-3. Confirme o CDP: `curl http://127.0.0.1:9222/json/version`
-4. Confirme o bridge: `curl http://127.0.0.1:8787/api/health`
+1. **File → Open Folder** on the team's project workspace
+2. Open an **Agent → New Chat** in that window (dedicated to the bridge)
+3. Confirm CDP: `curl http://127.0.0.1:9222/json/version`
+4. Confirm the bridge: `curl http://127.0.0.1:8787/api/health`
 
-O health deve mostrar `ok: true`, `hasChatInput: true` e `targetTitle` batendo com `CURSOR_CDP_TARGET`. Se só existir outra janela, o health falha de propósito — abra o folder certo.
+Health should show `ok: true`, `hasChatInput: true`, and a `targetTitle` that matches `CURSOR_CDP_TARGET`. If only another window exists, health fails on purpose — open the right folder.
 
-### Time remoto (Ngrok)
+### Remote team (Ngrok)
 
-Com o bridge no ar, em outro terminal (ou via `./start-local.sh`):
+With the bridge running, in another terminal (or via `./start-local.sh`):
 
 ```bash
 ngrok http 8787
 ```
 
-1. Compartilhe a URL `https://….ngrok-free.app` **e** a senha (não só o link)
-2. Cada pessoa entra com um nome distinto
-3. A máquina host precisa ficar ligada: o agente roda **localmente**
+1. Share the `https://….ngrok-free.app` URL **and** the password (not just the link)
+2. Each person signs in with a distinct name
+3. The host machine must stay on: the agent runs **locally**
 
-HTTPS é obrigatório fora de localhost para câmera/mic.
+HTTPS is required off localhost for camera/mic.
 
-## Sala colaborativa
+## Collaborative room
 
-1. Cada membro entra com a mesma `BRIDGE_PASSWORD` e um nome (ex.: Ana).
-2. O painel abre `EventSource` em `/api/events` e recebe snapshot, tokens, drafts, presença, artefatos e sinalização WebRTC.
-3. `POST /api/chat` processa o turno e **publica no barramento**.
-4. `POST /api/draft` espelha o texto digitado (efêmero).
-5. Se o agente estiver ocupado, novos envios recebem HTTP 409 com quem está dirigindo.
+1. Each member signs in with the same `BRIDGE_PASSWORD` and a name (e.g. Ana).
+2. The panel opens `EventSource` on `/api/events` and receives snapshot, tokens, drafts, presence, artifacts, and WebRTC signaling.
+3. `POST /api/chat` runs the turn and **publishes on the bus**.
+4. `POST /api/draft` mirrors typed text (ephemeral).
+5. If the agent is busy, new sends get HTTP 409 with who is driving.
 
-### Digitação ao vivo
+### Live typing
 
-Quem digita transmite o rascunho (~120ms). Se você estiver com foco na caixa, o draft remoto **não** sobrescreve; aparece o pill “Fulano está digitando…”.
+Whoever is typing broadcasts the draft (~120ms). If you have focus in the box, the remote draft **does not** overwrite it; you see a “Someone is typing…” pill.
 
-### Live áudio/vídeo
+### Live audio/video
 
-No painel **Live**: entrar, autorizar mic/câmera, mute, sair. Sinalização na sala; mídia peer-to-peer. Melhor até ~6 pessoas. NAT difícil → configure TURN (`RTC_TURN_*`).
+In the **Live** panel: join, allow mic/camera, mute, leave. Signaling is in the room; media is peer-to-peer. Best up to ~6 people. Difficult NAT → configure TURN (`RTC_TURN_*`).
 
-### Metadados na mensagem
+### Message metadata
 
-- User: `Nome · 23:04`
-- Assistant em execução: `Agente · por Ana · iniciado 23:04 · em execução… · 42s`
-- Assistant concluído: `Agente · por Ana · 23:04 → 23:09 · 5m 12s · finished`
+- User: `Name · 23:04`
+- Assistant running: `Agent · by Ana · started 23:04 · running… · 42s`
+- Assistant done: `Agent · by Ana · 23:04 → 23:09 · 5m 12s · finished`
 
-### Captura completa (CDP)
+### Full capture (CDP)
 
-O bridge **não** encerra o turno só porque o primeiro bubble estabilizou. Enquanto houver generating/activity, estende a deadline (`CDP_TIMEOUT_MS`) até `CDP_MAX_TIMEOUT_MS`. Depois de idle, espera um grace period (~25s). Se o teto estourar com o agente ativo, o painel marca `timeout` (parcial).
+The bridge **does not** end the turn just because the first bubble stabilized. While generating/activity is present, it extends the deadline (`CDP_TIMEOUT_MS`) up to `CDP_MAX_TIMEOUT_MS`. After idle, it waits a grace period (~25s). If the cap is hit while the agent is still active, the panel marks `timeout` (partial).
 
-## Downloads de `/tmp`
+## `/tmp` downloads
 
-Quando o agente imprime caminhos como `/tmp/relatorio.zip` ou `file:///tmp/pasta/`, o bridge registra o path, associa à mensagem e mostra o botão de download. Só paths **mencionados na sessão** são baixáveis. Symlinks que saiam de `/tmp` são bloqueados.
+When the agent prints paths such as `/tmp/report.zip` or `file:///tmp/folder/`, the bridge records the path, attaches it to the message, and shows a download button. Only paths **mentioned in the session** are downloadable. Symlinks that escape `/tmp` are blocked.
 
-## Variáveis
+## Environment variables
 
-| Var | Descrição |
+| Var | Description |
 | --- | --- |
-| `PORT` | Porta HTTP (default `8787`) |
-| `BRIDGE_PASSWORD` | Senha da sala |
-| `BRIDGE_SESSION_SECRET` | Segredo do cookie de sessão |
-| `BRIDGE_BACKEND` | `cdp` (default) ou `sdk` |
-| `CURSOR_CDP_URL` | HTTP do CDP (default `http://127.0.0.1:9222`) |
-| `CURSOR_CDP_TARGET` | Trecho do título da janela Cursor (ex.: nome da pasta) |
-| `CURSOR_API_KEY` | API key (só modo `sdk`) |
-| `CURSOR_CWD` | Path absoluto do workspace |
-| `CURSOR_MODEL` | Modelo SDK (default `composer-2.5`) |
-| `CDP_POLL_MS` | Intervalo de poll DOM (default `400`) |
-| `CDP_TIMEOUT_MS` | Janela soft enquanto o agente trabalha (default `600000`) |
-| `CDP_MAX_TIMEOUT_MS` | Teto absoluto do turno CDP (default `2700000` = 45 min) |
-| `RTC_STUN_URLS` | STUN para WebRTC |
-| `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | TURN opcional |
+| `PORT` | HTTP port (default `8787`) |
+| `BRIDGE_PASSWORD` | Room password |
+| `BRIDGE_SESSION_SECRET` | Session cookie secret |
+| `BRIDGE_BACKEND` | `cdp` (default) or `sdk` |
+| `CURSOR_CDP_URL` | CDP HTTP URL (default `http://127.0.0.1:9222`) |
+| `CURSOR_CDP_TARGET` | Substring of the Cursor window title (e.g. folder name) |
+| `CURSOR_API_KEY` | API key (`sdk` mode only) |
+| `CURSOR_CWD` | Absolute workspace path |
+| `CURSOR_MODEL` | SDK model (default `composer-2.5`) |
+| `CDP_POLL_MS` | DOM poll interval (default `400`) |
+| `CDP_TIMEOUT_MS` | Soft window while the agent works (default `600000`) |
+| `CDP_MAX_TIMEOUT_MS` | Absolute CDP turn cap (default `2700000` = 45 min) |
+| `RTC_STUN_URLS` | STUN for WebRTC |
+| `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | Optional TURN |
 
 ## Scripts
 
 ```bash
 npm run dev        # watch
-npm start          # produção simples
+npm start          # simple production
 npm run typecheck  # tsc --noEmit
 ./start-local.sh   # bridge + ngrok
 ```
 
-## Segurança
+## Security
 
-- Quem tiver **senha + URL** fala com um agente que lê/edita o `CURSOR_CWD` e baixa artefatos `/tmp` registrados.
-- Cookie `HttpOnly` + `SameSite=Lax`; `Secure` em HTTPS. Carrega `displayName` + `clientId`.
-- Login tem rate limit simples por IP.
-- Não compartilhe `.env` nem logue `CURSOR_API_KEY` / senha.
-- Detalhes em [SECURITY.md](SECURITY.md).
+- Anyone with **password + URL** talks to an agent that can read/edit `CURSOR_CWD` and download registered `/tmp` artifacts.
+- Cookie is `HttpOnly` + `SameSite=Lax`; `Secure` on HTTPS. It carries `displayName` + `clientId`.
+- Login has a simple per-IP rate limit.
+- Do not share `.env` or log `CURSOR_API_KEY` / the password.
+- Details in [SECURITY.md](SECURITY.md).
 
-## Limitações
+## Limitations
 
-- Modo CDP usa o chat Agent **visível** no IDE; abra um New Chat dedicado
-- Seletores/heurísticas da UI do Cursor podem quebrar em updates
-- Anexos/imagens pelo painel: melhor no modo `sdk`
-- Um turno por vez na sala
-- Live A/V é mesh P2P (melhor até ~6); sem TURN pode falhar em alguns NATs
-- Cookies antigos (sem nome) exigem novo login
+- CDP mode uses the Agent chat **visible** in the IDE; open a dedicated New Chat
+- Cursor UI selectors/heuristics can break on updates
+- Attachments/images from the panel work better in `sdk` mode
+- One turn at a time in the room
+- Live A/V is a P2P mesh (best up to ~6); without TURN it can fail on some NATs
+- Old cookies (no name) require a new login
 
-## Licença
+## License
 
 [MIT](LICENSE)

@@ -16,6 +16,9 @@
         <span id="typing-label" class="status-pill typing-pill" hidden></span>
         <span id="busy-label" class="status-pill" hidden></span>
         <span id="presence-label" class="muted presence" data-i18n-title="chat.presenceTitle" title="Who is online"></span>
+        <button id="clear-history" type="button" class="ghost" data-i18n="clear.button">
+          Clear history
+        </button>
         <button id="logout" type="button" class="ghost" data-i18n="chat.logout">Log out</button>
       </div>
     </header>
@@ -69,6 +72,22 @@
       </form>
     </div>
 
-    <script src="/chat.js" type="module"></script>
+    <dialog id="clear-history-dialog" class="modal">
+      <div class="modal-card">
+        <h2 data-i18n="clear.title">Clear room history?</h2>
+        <p class="muted" data-i18n="clear.body">
+          This only clears the Bridge room transcript and its download links. The chat in Cursor is not deleted.
+        </p>
+        <p id="clear-history-error" class="error" hidden></p>
+        <div class="modal-actions">
+          <button id="clear-history-cancel" type="button" class="ghost" data-i18n="clear.cancel">Cancel</button>
+          <button id="clear-history-confirm" type="button" class="danger" data-i18n="clear.confirm">
+            Clear history
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="/chat.js?v=3" type="module"></script>
   </body>
 </html>

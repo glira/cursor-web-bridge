@@ -2,7 +2,7 @@
  * WebRTC mesh live for the shared room.
  * Signaling goes through /api/rtc/* + SSE rtc_* events.
  */
-import { t } from "./i18n.js";
+import { t } from "./i18n.js?v=3";
 
 /** @typedef {{ clientId: string, displayName: string, joinedAt?: number }} RtcPeerInfo */
 

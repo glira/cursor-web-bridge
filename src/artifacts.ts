@@ -229,6 +229,12 @@ export async function listArtifacts(): Promise<ArtifactRecord[]> {
   return out.sort((a, b) => a.registeredAt - b.registeredAt);
 }
 
+export async function clearArtifacts(): Promise<void> {
+  await ensureLoaded();
+  artifacts = new Map();
+  await persist();
+}
+
 export function createFileReadStream(absolutePath: string): Readable {
   return createReadStream(absolutePath);
 }

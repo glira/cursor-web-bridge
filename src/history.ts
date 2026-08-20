@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { config } from "./config.js";
 
@@ -40,4 +40,10 @@ export async function loadHistory(limit = 500): Promise<HistoryMessage[]> {
 export async function appendHistory(message: HistoryMessage): Promise<void> {
   await mkdir(dirname(config.historyPath), { recursive: true });
   await appendFile(config.historyPath, `${JSON.stringify(message)}\n`, "utf8");
+}
+
+/** Wipe the Bridge room transcript only. Does not touch the Cursor IDE chat. */
+export async function clearHistory(): Promise<void> {
+  await mkdir(dirname(config.historyPath), { recursive: true });
+  await writeFile(config.historyPath, "", "utf8");
 }

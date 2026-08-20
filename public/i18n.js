@@ -52,6 +52,14 @@ const dictionaries = {
     "ui.emptyRoom": "Shared room is ready. Typing, activity, and downloads stay in the chat.",
     "ui.roomError": "Room error",
     "ui.sendFailed": "Could not send",
+    "clear.button": "Clear history",
+    "clear.title": "Clear room history?",
+    "clear.body":
+      "This only clears the Bridge room transcript and its download links. The chat in Cursor is not deleted.",
+    "clear.cancel": "Cancel",
+    "clear.confirm": "Clear history",
+    "clear.done": "{name} cleared the room history.",
+    "clear.failed": "Could not clear history",
   },
   pt: {
     "login.title": "Cursor Bridge — Login",
@@ -106,6 +114,14 @@ const dictionaries = {
     "ui.emptyRoom": "Sala compartilhada pronta. Digitação, atividade e downloads no fluxo do chat.",
     "ui.roomError": "Erro na sala",
     "ui.sendFailed": "Falha ao enviar",
+    "clear.button": "Limpar histórico",
+    "clear.title": "Limpar o histórico da sala?",
+    "clear.body":
+      "Isso apaga só o transcript da sala do Bridge e os links de download. O chat do Cursor não é apagado.",
+    "clear.cancel": "Cancelar",
+    "clear.confirm": "Limpar histórico",
+    "clear.done": "{name} limpou o histórico da sala.",
+    "clear.failed": "Não foi possível limpar o histórico",
   },
 };
 
@@ -125,7 +141,8 @@ export const locale = detectLocale();
 
 export function t(key, vars = {}) {
   const dict = dictionaries[locale] || dictionaries.en;
-  let text = dict[key] || dictionaries.en[key] || key;
+  let text = dict[key] || dictionaries.en[key] || "";
+  if (!text) return key;
   for (const [name, value] of Object.entries(vars)) {
     text = text.replaceAll(`{${name}}`, value);
   }
@@ -135,7 +152,9 @@ export function t(key, vars = {}) {
 export function applyI18n(root = document) {
   document.documentElement.lang = locale === "pt" ? "pt-BR" : "en";
   root.querySelectorAll("[data-i18n]").forEach((el) => {
-    el.textContent = t(el.getAttribute("data-i18n"));
+    const key = el.getAttribute("data-i18n");
+    const translated = t(key);
+    if (translated && translated !== key) el.textContent = translated;
   });
   root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));

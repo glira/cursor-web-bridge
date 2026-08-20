@@ -1,5 +1,5 @@
 import { createRoomRtc } from "./rtc.js";
-import { t, applyI18n } from "./i18n.js";
+import { t, applyI18n } from "./i18n.js?v=3";
 
 applyI18n();
 
@@ -10,6 +10,11 @@ const filesEl = document.getElementById("files");
 const chipsEl = document.getElementById("file-chips");
 const sendBtn = document.getElementById("send");
 const logoutBtn = document.getElementById("logout");
+const clearHistoryBtn = document.getElementById("clear-history");
+const clearHistoryDialog = document.getElementById("clear-history-dialog");
+const clearHistoryCancel = document.getElementById("clear-history-cancel");
+const clearHistoryConfirm = document.getElementById("clear-history-confirm");
+const clearHistoryError = document.getElementById("clear-history-error");
 const meLabel = document.getElementById("me-label");
 const presenceLabel = document.getElementById("presence-label");
 const busyLabel = document.getElementById("busy-label");
@@ -406,6 +411,7 @@ function startTurnClock(startedAt) {
 function setBusy(busy, by, reason = "") {
   roomBusy = Boolean(busy);
   sendBtn.disabled = roomBusy;
+  clearHistoryBtn.disabled = roomBusy;
   console.debug(
     `[ui] setBusy busy=${roomBusy} by=${by?.displayName ?? "-"} reason=${reason || "-"}`,
   );
@@ -689,6 +695,15 @@ function connectEvents() {
     }
   });
 
+  es.addEventListener("history_cleared", (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      applyHistoryCleared(data.clearedBy);
+    } catch {
+      applyHistoryCleared("");
+    }
+  });
+
   es.addEventListener("room_error", (ev) => {
     try {
       const data = JSON.parse(ev.data);
@@ -745,6 +760,63 @@ textEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     form.requestSubmit();
+  }
+});
+
+function applyHistoryCleared(clearedBy) {
+  messagesEl.innerHTML = "";
+  bubbleById.clear();
+  messageMeta.clear();
+  downloadsByMessage.clear();
+  renderActivity([]);
+  stopTurnClock();
+  appendSystem(t("clear.done", { name: clearedBy || t("meta.user") }));
+  scrollToBottom(true);
+}
+
+function closeClearHistoryDialog() {
+  if (typeof clearHistoryDialog.close === "function") {
+    clearHistoryDialog.close();
+  }
+}
+
+clearHistoryBtn.addEventListener("click", () => {
+  if (roomBusy) return;
+  clearHistoryError.hidden = true;
+  clearHistoryError.textContent = "";
+  clearHistoryConfirm.disabled = false;
+  if (typeof clearHistoryDialog.showModal === "function") {
+    clearHistoryDialog.showModal();
+  }
+});
+
+clearHistoryCancel.addEventListener("click", () => {
+  closeClearHistoryDialog();
+});
+
+clearHistoryDialog.addEventListener("click", (ev) => {
+  if (ev.target === clearHistoryDialog) closeClearHistoryDialog();
+});
+
+clearHistoryConfirm.addEventListener("click", async () => {
+  clearHistoryError.hidden = true;
+  clearHistoryConfirm.disabled = true;
+  try {
+    const res = await fetch("/api/history/clear", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      location.href = "/";
+      return;
+    }
+    if (!res.ok) {
+      throw new Error(data.error || t("clear.failed"));
+    }
+    closeClearHistoryDialog();
+  } catch (err) {
+    clearHistoryError.textContent = err instanceof Error ? err.message : t("clear.failed");
+    clearHistoryError.hidden = false;
+  } finally {
+    clearHistoryConfirm.disabled = false;
   }
 });
 

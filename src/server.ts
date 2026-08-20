@@ -24,12 +24,13 @@ import {
   createFileReadStream,
   downloadFileName,
   extractTmpPaths,
+  clearArtifacts,
   listArtifacts,
   registerArtifacts,
   resolveSafeTmpPath,
   zipDirectoryToTemp,
 } from "./artifacts.js";
-import { appendHistory } from "./history.js";
+import { appendHistory, clearHistory } from "./history.js";
 import {
   broadcast,
   buildSnapshot,
@@ -49,6 +50,11 @@ import {
 import { apiError, localeFromContext, tApi } from "./locale.js";
 
 const app = new Hono();
+
+app.use("*", async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  await next();
+});
 
 app.get("/", async (c) => {
   const file = isAuthenticated(c) ? "chat.html" : "login.html";
@@ -256,6 +262,34 @@ app.get("/api/events", requireAuth, async (c) => {
 
 app.get("/api/artifacts", requireAuth, async (c) => {
   return c.json({ artifacts: await listArtifacts() });
+});
+
+app.post("/api/history/clear", requireAuth, async (c) => {
+  const user = getSessionUser(c)!;
+  if (isRoomBusy()) {
+    const by = getBusyBy();
+    return by
+      ? apiError(c, "agent_busy_by", 409, { name: by.displayName })
+      : apiError(c, "agent_busy", 409);
+  }
+
+  try {
+    await clearHistory();
+    await clearArtifacts();
+  } catch (err) {
+    return c.json(
+      { error: err instanceof Error ? err.message : tApi(localeFromContext(c), "history_clear_failed") },
+      500,
+    );
+  }
+
+  broadcast({
+    type: "history_cleared",
+    data: { clearedBy: user.displayName, at: Date.now() },
+    at: Date.now(),
+  });
+  console.log(`[history] cleared by=${user.displayName}`);
+  return c.json({ ok: true });
 });
 
 app.post("/api/draft", requireAuth, async (c) => {

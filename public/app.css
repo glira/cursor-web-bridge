@@ -101,6 +101,10 @@ button.ghost {
   color: var(--text);
 }
 
+button.danger {
+  background: linear-gradient(180deg, #e85d5d, #c43c3c);
+}
+
 .card button {
   width: 100%;
   margin-top: 18px;
@@ -146,6 +150,11 @@ button.ghost {
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.topbar-right button.ghost {
+  padding: 7px 12px;
+  font-size: 0.85rem;
 }
 
 .presence {
@@ -459,6 +468,49 @@ button.ghost {
   background: #2a3441;
   font-size: 0.75rem;
   line-height: 1;
+}
+
+.modal {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  max-width: calc(100vw - 32px);
+}
+
+.modal::backdrop {
+  background: rgba(6, 10, 16, 0.62);
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  background: color-mix(in srgb, var(--panel) 94%, black);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.modal-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+.modal-card .muted {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modal-actions button {
+  width: auto;
 }
 
 @media (max-width: 640px) {

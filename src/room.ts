@@ -15,6 +15,7 @@ export type RoomEventType =
   | "composer_draft"
   | "artifact"
   | "room_error"
+  | "history_cleared"
   | "busy"
   | "rtc_peer_joined"
   | "rtc_peer_left"

@@ -26,6 +26,7 @@ const messages: Record<UiLocale, Record<string, string>> = {
     unauthenticated: "Not authenticated",
     image_only: "(image)",
     attachments_prefix: "[attachments: {names}]",
+    history_clear_failed: "Could not clear history",
   },
   pt: {
     too_many_attempts: "Muitas tentativas. Aguarde e tente de novo.",
@@ -50,6 +51,7 @@ const messages: Record<UiLocale, Record<string, string>> = {
     unauthenticated: "Não autenticado",
     image_only: "(imagem)",
     attachments_prefix: "[anexos: {names}]",
+    history_clear_failed: "Não foi possível limpar o histórico",
   },
 };
 

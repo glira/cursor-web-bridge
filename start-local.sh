@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Sobe o bridge local + túnel (Cloudflare ou Ngrok) na mesma sessão.
-# Uso: ./start-local.sh
-#      PORT=8788 ./start-local.sh
-#      TUNNEL_PROVIDER=cloudflare ./start-local.sh
-# Ctrl+C encerra bridge + túnel.
+# Start the local bridge + tunnel (Cloudflare or Ngrok) in the same session.
+# Usage: ./start-local.sh
+#        PORT=8788 ./start-local.sh
+#        TUNNEL_PROVIDER=cloudflare ./start-local.sh
+# Ctrl+C stops the bridge and the tunnel.
 
 set -euo pipefail
 
@@ -25,29 +25,29 @@ CLOUDFLARE_TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-cursor-web-bridge}"
 BRIDGE_PUBLIC_URL="${BRIDGE_PUBLIC_URL:-}"
 
 if ! command -v npm >/dev/null 2>&1; then
-  echo "erro: npm não encontrado no PATH" >&2
+  echo "error: npm not found in PATH" >&2
   exit 1
 fi
 
 case "$TUNNEL_PROVIDER" in
   ngrok)
     if ! command -v "$NGROK_BIN" >/dev/null 2>&1; then
-      echo "erro: ngrok não encontrado no PATH (instale ou defina NGROK_BIN)" >&2
+      echo "error: ngrok not found in PATH (install it or set NGROK_BIN)" >&2
       exit 1
     fi
     ;;
   cloudflare)
     if ! command -v "$CLOUDFLARED_BIN" >/dev/null 2>&1; then
-      echo "erro: cloudflared não encontrado no PATH (instale ou defina CLOUDFLARED_BIN)" >&2
+      echo "error: cloudflared not found in PATH (install it or set CLOUDFLARED_BIN)" >&2
       exit 1
     fi
     if [[ -z "${CLOUDFLARE_CONFIG:-}" && -z "${CLOUDFLARE_TUNNEL_NAME:-}" ]]; then
-      echo "erro: defina CLOUDFLARE_TUNNEL_NAME ou CLOUDFLARE_CONFIG no .env" >&2
+      echo "error: set CLOUDFLARE_TUNNEL_NAME or CLOUDFLARE_CONFIG in .env" >&2
       exit 1
     fi
     ;;
   *)
-    echo "erro: TUNNEL_PROVIDER inválido (${TUNNEL_PROVIDER}). Use cloudflare ou ngrok." >&2
+    echo "error: invalid TUNNEL_PROVIDER (${TUNNEL_PROVIDER}). Use cloudflare or ngrok." >&2
     exit 1
     ;;
 esac
@@ -89,14 +89,14 @@ bridge_healthy() {
 
 if port_in_use "$PORT"; then
   if bridge_healthy; then
-    echo "aviso: bridge já responde em http://127.0.0.1:${PORT} — só subindo túnel (${TUNNEL_PROVIDER})"
+    echo "notice: bridge already responding at http://127.0.0.1:${PORT} — starting tunnel only (${TUNNEL_PROVIDER})"
   else
-    echo "erro: porta ${PORT} já em uso por outro processo:" >&2
+    echo "error: port ${PORT} already in use by another process:" >&2
     port_holder "$PORT" >&2 || true
     echo >&2
-    echo "O Cursor IDE às vezes ocupa 8787. Use outra porta, por exemplo:" >&2
+    echo "Cursor IDE sometimes binds 8787. Use another port, for example:" >&2
     echo "  PORT=8788 ./start-local.sh" >&2
-    echo "ou altere PORT no .env" >&2
+    echo "or change PORT in .env" >&2
     exit 1
   fi
   SKIP_BRIDGE=1
@@ -110,7 +110,7 @@ TUNNEL_PID=""
 cleanup() {
   trap - EXIT INT TERM
   echo
-  echo "→ encerrando..."
+  echo "→ stopping..."
   if [[ -n "$TUNNEL_PID" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     kill "$TUNNEL_PID" 2>/dev/null || true
     wait "$TUNNEL_PID" 2>/dev/null || true
@@ -124,7 +124,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [[ "$SKIP_BRIDGE" -eq 0 ]]; then
-  echo "→ bridge em http://127.0.0.1:${PORT}"
+  echo "→ bridge at http://127.0.0.1:${PORT}"
   npm run dev &
   BRIDGE_PID=$!
 
@@ -133,14 +133,14 @@ if [[ "$SKIP_BRIDGE" -eq 0 ]]; then
       break
     fi
     if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
-      echo "erro: bridge morreu antes de subir (porta ${PORT}?)" >&2
+      echo "error: bridge exited before becoming ready (port ${PORT}?)" >&2
       exit 1
     fi
     sleep 0.5
   done
 
   if ! bridge_healthy; then
-    echo "erro: timeout esperando /api/health na porta ${PORT}" >&2
+    echo "error: timeout waiting for /api/health on port ${PORT}" >&2
     exit 1
   fi
 fi
@@ -168,19 +168,19 @@ start_tunnel() {
 start_tunnel
 
 echo
-echo "Pronto. Local: http://127.0.0.1:${PORT}"
+echo "Ready. Local: http://127.0.0.1:${PORT}"
 case "$TUNNEL_PROVIDER" in
   cloudflare)
     if [[ -n "$BRIDGE_PUBLIC_URL" ]]; then
-      echo "URL pública: ${BRIDGE_PUBLIC_URL}"
+      echo "Public URL: ${BRIDGE_PUBLIC_URL}"
     else
-      echo "URL pública: hostname do ingress (ex. https://bridge.example.com) — defina BRIDGE_PUBLIC_URL no .env para imprimir aqui."
+      echo "Public URL: ingress hostname (e.g. https://bridge.example.com) — set BRIDGE_PUBLIC_URL in .env to print it here."
     fi
-    echo "Ctrl+C para parar bridge + cloudflared."
+    echo "Ctrl+C to stop the bridge and cloudflared."
     ;;
   ngrok)
-    echo "URL pública: painel do ngrok (http://127.0.0.1:4040) ou saída do processo."
-    echo "Ctrl+C para parar bridge + ngrok."
+    echo "Public URL: ngrok inspector (http://127.0.0.1:4040) or process output."
+    echo "Ctrl+C to stop the bridge and ngrok."
     ;;
 esac
 echo

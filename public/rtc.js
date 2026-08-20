@@ -2,6 +2,7 @@
  * WebRTC mesh live for the shared room.
  * Signaling goes through /api/rtc/* + SSE rtc_* events.
  */
+import { t } from "./i18n.js";
 
 /** @typedef {{ clientId: string, displayName: string, joinedAt?: number }} RtcPeerInfo */
 
@@ -46,7 +47,7 @@ export function createRoomRtc(opts) {
       video.srcObject = localStream;
       const label = document.createElement("div");
       label.className = "live-tile-label";
-      label.textContent = `${getDisplayName() || "Você"} (você)`;
+      label.textContent = t("live.you", { name: getDisplayName() || t("live.youFallback") });
       tile.appendChild(video);
       tile.appendChild(label);
       tilesEl.appendChild(tile);
@@ -217,7 +218,7 @@ export function createRoomRtc(opts) {
 
   async function join() {
     if (inLive) return;
-    setStatus("Pedindo câmera/mic…");
+    setStatus(t("live.askingMedia"));
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 360 } },
@@ -234,7 +235,7 @@ export function createRoomRtc(opts) {
     for (const p of data.peers || []) {
       if (p.clientId !== getClientId()) peers.set(p.clientId, p);
     }
-    setStatus("No live");
+    setStatus(t("live.inLive"));
     renderTiles();
 
     for (const p of peers.values()) {

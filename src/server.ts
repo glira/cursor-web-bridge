@@ -46,6 +46,7 @@ import {
   setStreamingMessageId,
   subscribe,
 } from "./room.js";
+import { apiError, localeFromContext, tApi } from "./locale.js";
 
 const app = new Hono();
 
@@ -71,7 +72,7 @@ app.post("/api/login", async (c) => {
   const limit = checkLoginRateLimit(c);
   if (!limit.ok) {
     c.header("Retry-After", String(limit.retryAfterSec));
-    return c.json({ error: "Muitas tentativas. Aguarde e tente de novo." }, 429);
+    return apiError(c, "too_many_attempts", 429);
   }
 
   let password = "";
@@ -89,11 +90,11 @@ app.post("/api/login", async (c) => {
 
   const displayName = validateDisplayName(displayNameRaw);
   if (!displayName) {
-    return c.json({ error: "Informe seu nome para entrar na sala." }, 400);
+    return apiError(c, "name_required", 400);
   }
 
   if (!passwordsMatch(password, config.bridgePassword)) {
-    return c.json({ error: "Senha inválida" }, 401);
+    return apiError(c, "invalid_password", 401);
   }
 
   clearLoginRateLimit(c);
@@ -159,15 +160,15 @@ app.post("/api/rtc/signal", requireAuth, async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "JSON inválido" }, 400);
+    return apiError(c, "invalid_json", 400);
   }
   const toClientId = typeof body.toClientId === "string" ? body.toClientId : "";
   const signalType = typeof body.type === "string" ? body.type : "";
   if (!toClientId || !signalType) {
-    return c.json({ error: "toClientId e type são obrigatórios." }, 400);
+    return apiError(c, "signal_required", 400);
   }
   if (toClientId === user.clientId) {
-    return c.json({ error: "Destino inválido." }, 400);
+    return apiError(c, "invalid_destination", 400);
   }
   const ok = relayRtcSignal({
     fromClientId: user.clientId,
@@ -180,7 +181,7 @@ app.post("/api/rtc/signal", requireAuth, async (c) => {
     },
   });
   if (!ok) {
-    return c.json({ error: "Peer fora do live ou offline." }, 409);
+    return apiError(c, "peer_offline", 409);
   }
   return c.json({ ok: true });
 });
@@ -264,10 +265,10 @@ app.post("/api/draft", requireAuth, async (c) => {
     const body = await c.req.json<{ text?: string }>();
     text = typeof body.text === "string" ? body.text : "";
   } catch {
-    return c.json({ error: "JSON inválido" }, 400);
+    return apiError(c, "invalid_json", 400);
   }
   if (text.length > 20_000) {
-    return c.json({ error: "Rascunho muito longo." }, 400);
+    return apiError(c, "draft_too_long", 400);
   }
   broadcast({
     type: "composer_draft",
@@ -285,7 +286,7 @@ app.post("/api/draft", requireAuth, async (c) => {
 app.get("/api/artifacts/download", requireAuth, async (c) => {
   const pathParam = c.req.query("path");
   if (!pathParam) {
-    return c.json({ error: "Parâmetro path é obrigatório." }, 400);
+    return apiError(c, "path_required", 400);
   }
 
   try {
@@ -312,7 +313,7 @@ app.get("/api/artifacts/download", requireAuth, async (c) => {
     });
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : "Falha no download" },
+      { error: err instanceof Error ? err.message : tApi(localeFromContext(c), "download_failed") },
       400,
     );
   }
@@ -326,8 +327,8 @@ app.post("/api/chat", requireAuth, async (c) => {
     return c.json(
       {
         error: by
-          ? `Agente ocupado por ${by.displayName}. Aguarde terminar.`
-          : "Já existe uma resposta em andamento. Aguarde terminar.",
+          ? tApi(localeFromContext(c), "agent_busy_by", { name: by.displayName })
+          : tApi(localeFromContext(c), "agent_busy"),
       },
       409,
     );
@@ -375,18 +376,20 @@ app.post("/api/chat", requireAuth, async (c) => {
     }
   } catch (err) {
     setRoomBusy(null);
-    return c.json({ error: err instanceof Error ? err.message : "Payload inválido" }, 400);
+    return c.json({ error: err instanceof Error ? err.message : tApi(localeFromContext(c), "invalid_payload") }, 400);
   }
 
   const preview =
     text.trim() +
     (attachments.length
-      ? `${text.trim() ? "\n\n" : ""}[anexos: ${attachments.map((a) => a.originalName).join(", ")}]`
+      ? `${text.trim() ? "\n\n" : ""}${tApi(localeFromContext(c), "attachments_prefix", {
+          names: attachments.map((a) => a.originalName).join(", "),
+        })}`
       : "");
 
   if (!preview.trim() && images.length === 0) {
     setRoomBusy(null);
-    return c.json({ error: "Envie texto e/ou arquivo." }, 400);
+    return apiError(c, "text_or_file", 400);
   }
 
   const userMessageId = newMessageId();
@@ -394,7 +397,7 @@ app.post("/api/chat", requireAuth, async (c) => {
   const userMessage = {
     id: userMessageId,
     role: "user" as const,
-    text: preview || "(imagem)",
+    text: preview || tApi(localeFromContext(c), "image_only"),
     displayName: user.displayName,
     clientId: user.clientId,
     createdAt: turnStartedAt,
@@ -501,7 +504,7 @@ app.post("/api/chat", requireAuth, async (c) => {
     const assistantMessage = {
       id: assistantMessageId,
       role: "assistant" as const,
-      text: assistantText || `(concluído: ${result.status || "ok"})`,
+      text: assistantText || tApi(localeFromContext(c), "finished", { status: result.status || "ok" }),
       createdAt: turnStartedAt,
       completedAt,
       durationMs: completedAt - turnStartedAt,
@@ -521,13 +524,13 @@ app.post("/api/chat", requireAuth, async (c) => {
 
     return c.json({ ok: true, messageId: assistantMessageId, result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Erro desconhecido";
+    const message = err instanceof Error ? err.message : tApi(localeFromContext(c), "unknown_error");
     const completedAt = Date.now();
     if (assistantText.trim() || seenPaths.size > 0) {
       const partial = {
         id: assistantMessageId,
         role: "assistant" as const,
-        text: assistantText || `(erro: ${message})`,
+        text: assistantText || tApi(localeFromContext(c), "error_wrap", { message }),
         createdAt: turnStartedAt,
         completedAt,
         durationMs: completedAt - turnStartedAt,
@@ -569,7 +572,7 @@ app.post("/api/upload", requireAuth, async (c) => {
       }
     }
     if (files.length === 0) {
-      return c.json({ error: "Nenhum arquivo enviado" }, 400);
+      return apiError(c, "no_file", 400);
     }
 
     const stored = [];
@@ -583,7 +586,7 @@ app.post("/api/upload", requireAuth, async (c) => {
       })),
     });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : "Falha no upload" }, 400);
+    return c.json({ error: err instanceof Error ? err.message : tApi(localeFromContext(c), "upload_failed") }, 400);
   }
 });
 
@@ -619,7 +622,7 @@ const server = serve(
 server.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EADDRINUSE") {
     console.error(
-      `[bridge] porta ${config.port} já em uso. Altere PORT no .env ou mate o processo.`,
+      `[bridge] port ${config.port} already in use. Change PORT in .env or stop the other process.`,
     );
   } else {
     console.error("[bridge] server error:", err);

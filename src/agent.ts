@@ -76,7 +76,7 @@ function buildPrompt(text: string, attachments: ChatAttachmentMeta[]): string {
   if (fileLines.length === 0) return text;
 
   const header =
-    "O usuário anexou arquivo(s). Leia o conteúdo pelo(s) caminho(s) absoluto(s) abaixo e responda considerando o texto e os anexos.\n" +
+    "The user attached file(s). Read the content at the absolute path(s) below and answer using both the text and the attachments.\n" +
     fileLines.join("\n");
 
   if (!text.trim()) return header;
@@ -90,7 +90,7 @@ export async function runChatTurn(opts: {
   handlers: StreamHandlers;
 }): Promise<{ agentId: string; runId: string; status: string }> {
   if (agentBusy) {
-    throw new Error("Já existe uma resposta em andamento. Aguarde terminar.");
+    throw new Error("A reply is already in progress. Wait for it to finish.");
   }
 
   agentBusy = true;
@@ -98,10 +98,10 @@ export async function runChatTurn(opts: {
     if (config.backend === "cdp") {
       const prompt = buildPrompt(opts.text, opts.attachments);
       if (!prompt.trim()) {
-        throw new Error("Envie texto (modo CDP ainda não envia imagens pelo painel).");
+        throw new Error("Send text (CDP mode cannot send images through the panel yet).");
       }
       if (opts.images.length > 0) {
-        opts.handlers.onStatus("cdp: imagens ignoradas neste modo");
+        opts.handlers.onStatus("cdp: images ignored in this mode");
       }
       return await runCdpChatTurn({ text: prompt, handlers: opts.handlers });
     }
@@ -109,7 +109,7 @@ export async function runChatTurn(opts: {
     const agent = await ensureAgent();
     const prompt = buildPrompt(opts.text, opts.attachments);
     if (!prompt.trim() && opts.images.length === 0) {
-      throw new Error("Envie texto e/ou arquivo.");
+      throw new Error("Send text and/or a file.");
     }
 
     opts.handlers.onStatus(`agent=${agent.agentId}`);
@@ -117,7 +117,7 @@ export async function runChatTurn(opts: {
     const message =
       opts.images.length > 0
         ? {
-            text: prompt || "Analise a(s) imagem(ns) anexada(s).",
+            text: prompt || "Analyze the attached image(s).",
             images: opts.images,
           }
         : prompt;
@@ -168,7 +168,7 @@ export async function runChatTurn(opts: {
     };
   } catch (err) {
     if (err instanceof CursorAgentError) {
-      throw new Error(`Falha ao iniciar o agente: ${err.message}`);
+      throw new Error(`Failed to start the agent: ${err.message}`);
     }
     throw err;
   } finally {

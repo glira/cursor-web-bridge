@@ -92,25 +92,25 @@ export async function resolveSafeTmpPath(requested: string): Promise<{
   await ensureLoaded();
   const requestedNorm = normalizeRegisteredPath(requested);
   if (!requestedNorm.startsWith(`${TMP_ROOT}/`)) {
-    throw new Error("Apenas caminhos sob /tmp/ são permitidos.");
+    throw new Error("Only paths under /tmp/ are allowed.");
   }
   if (requestedNorm.includes("\0") || requestedNorm.includes("..")) {
-    throw new Error("Caminho inválido.");
+    throw new Error("Invalid path.");
   }
 
   const abs = resolve(requestedNorm);
   if (abs !== TMP_ROOT && !abs.startsWith(`${TMP_ROOT}${sep}`)) {
-    throw new Error("Caminho fora de /tmp.");
+    throw new Error("Path is outside /tmp.");
   }
 
   let real: string;
   try {
     real = await realpath(abs);
   } catch {
-    throw new Error("Arquivo não encontrado.");
+    throw new Error("File not found.");
   }
   if (real !== TMP_ROOT && !real.startsWith(`${TMP_ROOT}${sep}`)) {
-    throw new Error("Symlink fora de /tmp bloqueado.");
+    throw new Error("Symlink outside /tmp is blocked.");
   }
 
   const registered =
@@ -119,7 +119,7 @@ export async function resolveSafeTmpPath(requested: string): Promise<{
     findParentRegistered(real);
 
   if (!registered) {
-    throw new Error("Arquivo não registrado nesta sessão.");
+    throw new Error("File is not registered in this session.");
   }
 
   const st = await lstat(real);
@@ -256,7 +256,7 @@ export async function zipDirectoryToTemp(dirPath: string): Promise<string> {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolvePromise();
-      else reject(new Error(`zip falhou com código ${code}`));
+      else reject(new Error(`zip failed with code ${code}`));
     });
   });
 

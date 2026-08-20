@@ -1,4 +1,7 @@
 import { createRoomRtc } from "./rtc.js";
+import { t, applyI18n } from "./i18n.js";
+
+applyI18n();
 
 const messagesEl = document.getElementById("messages");
 const form = document.getElementById("composer");
@@ -53,17 +56,19 @@ function updateLiveControls() {
   liveLeaveBtn.hidden = !on;
   liveMicBtn.disabled = !on;
   liveCamBtn.disabled = !on;
-  liveMicBtn.textContent = rtc.getMicEnabled() ? "Mic on" : "Mic off";
-  liveCamBtn.textContent = rtc.getCamEnabled() ? "Câm on" : "Câm off";
+  liveMicBtn.textContent = rtc.getMicEnabled() ? t("live.micOn") : t("live.micOff");
+  liveCamBtn.textContent = rtc.getCamEnabled() ? t("live.camOn") : t("live.camOff");
 }
 
 function updateLiveRoster(peers, inLive) {
   const others = (peers || []).filter((p) => p.clientId !== myClientId);
   if (!others.length) {
-    liveRoster.textContent = inLive ? "Só você no live." : "Ninguém no live ainda.";
+    liveRoster.textContent = inLive ? t("live.onlyYou") : t("live.nobody");
     return;
   }
-  liveRoster.textContent = `No live: ${others.map((p) => p.displayName).join(", ")}`;
+  liveRoster.textContent = t("live.with", {
+    names: others.map((p) => p.displayName).join(", "),
+  });
 }
 
 const rtc = createRoomRtc({
@@ -82,8 +87,8 @@ liveJoinBtn.addEventListener("click", async () => {
     liveJoinBtn.disabled = true;
     await rtc.join();
   } catch (err) {
-    appendSystem(err instanceof Error ? err.message : "Falha ao entrar no live");
-    liveStatus.textContent = "Falhou";
+    appendSystem(err instanceof Error ? err.message : t("live.joinFailed"));
+    liveStatus.textContent = t("live.failed");
   } finally {
     liveJoinBtn.disabled = false;
     updateLiveControls();
@@ -153,20 +158,20 @@ messagesEl.addEventListener("scroll", () => {
 function buildMetaText(meta) {
   if (!meta) return "";
   if (meta.role === "user") {
-    const name = meta.displayName || "Usuário";
-    const t = formatTime(meta.createdAt);
-    return t ? `${name} · ${t}` : name;
+    const name = meta.displayName || t("meta.user");
+    const time = formatTime(meta.createdAt);
+    return time ? `${name} · ${time}` : name;
   }
   if (meta.role === "assistant") {
-    const parts = ["Agente"];
-    if (meta.startedBy) parts.push(`por ${meta.startedBy}`);
+    const parts = [t("meta.agent")];
+    if (meta.startedBy) parts.push(t("meta.by", { name: meta.startedBy }));
     if (meta.running) {
       const start = formatTime(meta.createdAt || meta.startedAt);
       const elapsed = formatDuration(
         Date.now() - (meta.createdAt || meta.startedAt || Date.now()),
       );
-      if (start) parts.push(`iniciado ${start}`);
-      parts.push(meta.awaitingFinal ? "aguardando resposta final…" : "em execução…");
+      if (start) parts.push(t("meta.started", { time: start }));
+      parts.push(meta.awaitingFinal ? t("meta.awaiting") : t("meta.running"));
       if (elapsed) parts.push(elapsed);
       return parts.join(" · ");
     }
@@ -177,7 +182,7 @@ function buildMetaText(meta) {
     if (meta.durationMs != null) parts.push(formatDuration(meta.durationMs));
     if (meta.status) {
       if (meta.status === "timeout") {
-        parts.push("timeout (parcial — ainda pode estar rodando no Cursor)");
+        parts.push(t("meta.timeout"));
       } else {
         parts.push(meta.status);
       }
@@ -234,7 +239,10 @@ function addDownloadButton(messageId, path, kind = "file") {
   a.href = `/api/artifacts/download?path=${encodeURIComponent(path)}`;
   a.setAttribute("download", "");
   const label = document.createElement("span");
-  label.textContent = kind === "dir" ? `Baixar ${basenamePath(path)}.zip` : `Baixar ${basenamePath(path)}`;
+  label.textContent =
+    kind === "dir"
+      ? t("dl.dir", { name: basenamePath(path) })
+      : t("dl.file", { name: basenamePath(path) });
   a.appendChild(label);
   a.title = path;
   box.appendChild(a);
@@ -274,7 +282,7 @@ function ensureBubble(message) {
   if (message.role === "assistant") {
     const author = document.createElement("div");
     author.className = "bubble-author";
-    author.textContent = "Agente";
+    author.textContent = t("meta.agent");
     el.appendChild(author);
   }
 
@@ -385,7 +393,7 @@ function startTurnClock(startedAt) {
   turnStartedAt = startedAt || Date.now();
   const tick = () => {
     if (!turnStartedAt) return;
-    turnClock.textContent = `Turno ${formatDuration(Date.now() - turnStartedAt)}`;
+    turnClock.textContent = t("ui.turn", { duration: formatDuration(Date.now() - turnStartedAt) });
     for (const [id, meta] of messageMeta) {
       if (meta.running) updateBubbleMeta(id);
     }
@@ -403,10 +411,10 @@ function setBusy(busy, by, reason = "") {
   );
   if (roomBusy && by?.displayName) {
     busyLabel.hidden = false;
-    busyLabel.textContent = `Respondendo… (${by.displayName})`;
+    busyLabel.textContent = t("ui.replyingBy", { name: by.displayName });
   } else if (roomBusy) {
     busyLabel.hidden = false;
-    busyLabel.textContent = "Respondendo…";
+    busyLabel.textContent = t("ui.replying");
   } else {
     busyLabel.hidden = true;
     busyLabel.textContent = "";
@@ -419,15 +427,19 @@ function setBusy(busy, by, reason = "") {
 
 function renderPresence(members) {
   if (!Array.isArray(members) || members.length === 0) {
-    presenceLabel.textContent = "offline";
+    presenceLabel.textContent = t("ui.offline");
     return;
   }
-  presenceLabel.textContent = `online: ${members.map((m) => m.displayName).join(", ")}`;
+  presenceLabel.textContent = t("ui.online", {
+    names: members.map((m) => m.displayName).join(", "),
+  });
 }
 
 function renderActivity(lines, elapsedMs) {
   const list = Array.isArray(lines) ? lines.filter(Boolean) : [];
-  const awaitingFinal = list.some((l) => /aguardando resposta final/i.test(l));
+  const awaitingFinal = list.some((l) =>
+    /aguardando resposta final|waiting for (the )?final reply/i.test(l),
+  );
   for (const [id, meta] of messageMeta) {
     if (meta.role !== "assistant" || !meta.running) continue;
     if (Boolean(meta.awaitingFinal) === awaitingFinal) continue;
@@ -443,7 +455,7 @@ function renderActivity(lines, elapsedMs) {
   activityPanel.hidden = false;
   activityBody.textContent = list.join("\n");
   if (elapsedMs != null && turnStartedAt == null) {
-    turnClock.textContent = `Turno ${formatDuration(elapsedMs)}`;
+    turnClock.textContent = t("ui.turn", { duration: formatDuration(elapsedMs) });
   }
 }
 
@@ -454,7 +466,7 @@ function showTyping(displayName) {
     return;
   }
   typingLabel.hidden = false;
-  typingLabel.textContent = `${displayName} está digitando…`;
+  typingLabel.textContent = t("ui.typing", { name: displayName });
   if (typingHideTimer) clearTimeout(typingHideTimer);
   typingHideTimer = setTimeout(() => {
     typingLabel.hidden = true;
@@ -502,7 +514,7 @@ function applySnapshot(snapshot) {
   }
 
   if ((snapshot.messages || []).length === 0) {
-    appendSystem("Sala compartilhada pronta. Digitação, atividade e downloads no fluxo do chat.");
+    appendSystem(t("ui.emptyRoom"));
   }
 
   scrollToBottom(true);
@@ -680,7 +692,7 @@ function connectEvents() {
   es.addEventListener("room_error", (ev) => {
     try {
       const data = JSON.parse(ev.data);
-      appendSystem(data.error || "Erro na sala");
+      appendSystem(data.error || t("ui.roomError"));
       if (data.messageId) {
         const meta = messageMeta.get(data.messageId);
         if (meta) {
@@ -695,13 +707,13 @@ function connectEvents() {
       setBusy(false, null, "room_error");
       renderActivity([]);
     } catch {
-      appendSystem("Erro na sala");
+      appendSystem(t("ui.roomError"));
       setBusy(false, null, "room_error-parse");
     }
   });
 
   es.onerror = () => {
-    console.warn("[events] conexão interrompida; reconectando…");
+    console.warn("[events] connection interrupted; reconnecting…");
   };
 
   return es;
@@ -756,8 +768,8 @@ async function ensureAuth() {
   myClientId = data.clientId;
   myDisplayName = data.displayName;
   meLabel.textContent = data.displayName
-    ? `${data.displayName} · sala compartilhada`
-    : "Sala compartilhada";
+    ? t("chat.meRoom", { name: data.displayName })
+    : t("chat.sharedRoom");
   setBusy(data.busy, data.busyBy, "/api/me");
   return data;
 }
@@ -808,7 +820,7 @@ form.addEventListener("submit", async (e) => {
     await sendMessage(text, files);
   } catch (err) {
     console.warn("[ui] submit fail", err);
-    appendSystem(err instanceof Error ? err.message : "Falha ao enviar");
+    appendSystem(err instanceof Error ? err.message : t("ui.sendFailed"));
   } finally {
     try {
       const res = await fetch("/api/me");

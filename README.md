@@ -19,6 +19,7 @@ What the room provides:
 - Agent activity (Exploring, tools, Planning) above the composer
 - Downloads for `/tmp/...` paths the agent mentions
 - One turn at a time — no race on the composer
+- UI language follows the browser (`pt` or `en`; other locales fall back to English)
 
 Point `CURSOR_CWD` and `CURSOR_CDP_TARGET` at the folder/window of **your** repository. The bridge does not assume a specific project.
 

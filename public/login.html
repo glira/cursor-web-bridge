@@ -1,17 +1,19 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cursor Bridge — Login</title>
+    <title data-i18n="login.title">Cursor Bridge — Login</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body class="page-login">
     <main class="card">
       <h1>Cursor Bridge</h1>
-      <p class="muted">Entre na sala compartilhada com seu nome e a senha do time.</p>
+      <p class="muted" data-i18n="login.lead">
+        Join the shared room with your name and the team password.
+      </p>
       <form id="login-form">
-        <label for="displayName">Seu nome</label>
+        <label for="displayName" data-i18n="login.name">Your name</label>
         <input
           id="displayName"
           name="displayName"
@@ -20,15 +22,20 @@
           maxlength="40"
           required
           autofocus
-          placeholder="Ex.: Ana"
+          data-i18n-placeholder="login.namePlaceholder"
+          placeholder="e.g. Ana"
         />
-        <label for="password">Senha</label>
+        <label for="password" data-i18n="login.password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required />
-        <button type="submit">Entrar na sala</button>
+        <button type="submit" data-i18n="login.submit">Enter room</button>
         <p id="error" class="error" hidden></p>
       </form>
     </main>
-    <script>
+    <script type="module">
+      import { t, applyI18n } from "./i18n.js";
+
+      applyI18n();
+
       const form = document.getElementById("login-form");
       const errorEl = document.getElementById("error");
       const savedName = localStorage.getItem("bridgeDisplayName") || "";
@@ -46,7 +53,7 @@
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          errorEl.textContent = data.error || "Falha no login";
+          errorEl.textContent = data.error || t("login.failed");
           errorEl.hidden = false;
           return;
         }

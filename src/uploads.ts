@@ -54,17 +54,17 @@ export type StoredUpload = {
 
 export async function storeUploadedFile(file: File): Promise<StoredUpload> {
   if (file.size <= 0) {
-    throw new Error("Arquivo vazio.");
+    throw new Error("Empty file.");
   }
   if (file.size > config.maxUploadBytes) {
-    throw new Error(`Arquivo maior que ${Math.floor(config.maxUploadBytes / (1024 * 1024))} MB.`);
+    throw new Error(`File larger than ${Math.floor(config.maxUploadBytes / (1024 * 1024))} MB.`);
   }
 
   const mimeType = (file.type || "application/octet-stream").toLowerCase();
   const ext = extname(file.name).toLowerCase();
 
   if (!ALLOWED_EXT.has(ext) && !ALLOWED_MIME.has(mimeType)) {
-    throw new Error(`Tipo de arquivo não permitido: ${mimeType || ext || "desconhecido"}`);
+    throw new Error(`File type not allowed: ${mimeType || ext || "unknown"}`);
   }
 
   await mkdir(config.uploadsDir, { recursive: true });

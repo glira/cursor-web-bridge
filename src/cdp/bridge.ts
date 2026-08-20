@@ -43,7 +43,7 @@ function activityKey(lines: string[]): string {
 
 async function listTargets(cdpHttpUrl: string): Promise<CdpTarget[]> {
   const res = await fetch(`${cdpHttpUrl.replace(/\/$/, "")}/json`);
-  if (!res.ok) throw new Error(`CDP /json falhou: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`CDP /json failed: HTTP ${res.status}`);
   return (await res.json()) as CdpTarget[];
 }
 
@@ -120,16 +120,16 @@ async function pickWorkbenchTarget(targets: CdpTarget[]): Promise<{
   const preferred = workbench[0] || pages[0];
   if (!preferred?.webSocketDebuggerUrl) {
     throw new Error(
-      "Nenhuma janela Cursor encontrada no CDP. Abra o Cursor com --remote-debugging-port=9222.",
+      "No Cursor window found on CDP. Open Cursor with --remote-debugging-port=9222.",
     );
   }
 
   if (needle && workbench.length > 0) {
     const open = windows.map((w) => w.title || w.id).join(" | ");
     throw new Error(
-      `Janela do projeto "${needle}" não encontrada no CDP. ` +
-        `Abra o folder do seu projeto numa janela Cursor (File → New Window → Open Folder). ` +
-        `Janelas agora: ${open || "(nenhuma)"}`,
+      `Project window "${needle}" was not found on CDP. ` +
+        `Open the project folder in a Cursor window (File → New Window → Open Folder). ` +
+        `Windows now: ${open || "(none)"}`,
     );
   }
 
@@ -228,9 +228,9 @@ function emitActivity(
   if (!handlers.onActivity) return;
   const lines = [...snap.activityLines];
   if (snap.generating && !lines.some((l) => /gerando|generating|stop/i.test(l))) {
-    lines.unshift("Gerando…");
+    lines.unshift("Generating…");
   } else if (snap.liveWorking && lines.length === 0) {
-    lines.unshift("Trabalhando…");
+    lines.unshift("Working…");
   }
   const key = activityKey(lines);
   if (key === prevKey.value) return;
@@ -249,14 +249,14 @@ async function focusChatInput(client: CdpClient): Promise<string> {
         if (input) { matched = sel; break; }
       } catch {}
     }
-    if (!input) return { ok: false, error: 'Input do chat não encontrado. Abra um chat Agent no Cursor.' };
+    if (!input) return { ok: false, error: 'Chat input not found. Open an Agent chat in Cursor.' };
     input.scrollIntoView({ block: 'center', behavior: 'instant' });
     input.focus();
     input.click();
     return { ok: true, info: input.tagName + ' | ' + matched };
   })()`);
 
-  if (!result?.ok) throw new Error(result?.error || "Falha ao focar o input do Cursor");
+  if (!result?.ok) throw new Error(result?.error || "Failed to focus the Cursor input");
   return result.info || "input";
 }
 
@@ -359,7 +359,7 @@ export async function runCdpChatTurn(opts: {
   handlers: StreamHandlers;
 }): Promise<{ agentId: string; runId: string; status: string }> {
   const prompt = opts.text.trim();
-  if (!prompt) throw new Error("Envie texto para o modo CDP (anexos via CDP ainda não suportados).");
+  if (!prompt) throw new Error("Send text for CDP mode (CDP attachments are not supported yet).");
 
   const { client, target } = await connectToWorkbench();
   opts.handlers.onStatus(`cdp=${target.title || target.id} (want=${config.cursorCdpTarget})`);

@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context, MiddlewareHandler, Next } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { config } from "./config.js";
+import { apiError } from "./locale.js";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -149,7 +150,7 @@ export function clearSessionCookie(c: Context): void {
 
 export const requireAuth: MiddlewareHandler = async (c: Context, next: Next) => {
   if (!isAuthenticated(c)) {
-    return c.json({ error: "Não autenticado" }, 401);
+    return apiError(c, "unauthenticated", 401);
   }
   await next();
 };

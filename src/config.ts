@@ -82,7 +82,7 @@ function buildIceServers(): Array<{
 }
 
 if (config.backend === "sdk" && !config.cursorApiKey) {
-  throw new Error("BRIDGE_BACKEND=sdk requer CURSOR_API_KEY");
+  throw new Error("BRIDGE_BACKEND=sdk requires CURSOR_API_KEY");
 }
 
 export type BridgeConfig = typeof config;

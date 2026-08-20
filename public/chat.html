@@ -1,22 +1,22 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cursor Bridge — Sala</title>
+    <title data-i18n="chat.title">Cursor Bridge — Room</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body class="page-chat">
     <header class="topbar">
       <div class="topbar-left">
         <strong>Cursor Bridge</strong>
-        <span id="me-label" class="muted">Sala compartilhada</span>
+        <span id="me-label" class="muted" data-i18n="chat.sharedRoom">Shared room</span>
       </div>
       <div class="topbar-right">
         <span id="typing-label" class="status-pill typing-pill" hidden></span>
         <span id="busy-label" class="status-pill" hidden></span>
-        <span id="presence-label" class="muted presence" title="Quem está online"></span>
-        <button id="logout" type="button" class="ghost">Sair</button>
+        <span id="presence-label" class="muted presence" data-i18n-title="chat.presenceTitle" title="Who is online"></span>
+        <button id="logout" type="button" class="ghost" data-i18n="chat.logout">Log out</button>
       </div>
     </header>
 
@@ -25,18 +25,18 @@
         <main id="messages" class="messages" aria-live="polite"></main>
       </div>
 
-      <aside class="live-panel" aria-label="Live áudio e vídeo">
+      <aside class="live-panel" data-i18n-aria="chat.liveAria" aria-label="Live audio and video">
         <div class="live-head">
           <strong>Live</strong>
           <span id="live-status" class="muted live-status"></span>
         </div>
-        <p class="muted live-hint">Áudio e vídeo na sala — sem Google Meet.</p>
+        <p class="muted live-hint" data-i18n="chat.liveHint">Audio and video in the room — no Google Meet.</p>
         <div id="live-tiles" class="live-tiles"></div>
         <div class="live-controls">
-          <button id="live-join" type="button">Entrar no live</button>
-          <button id="live-leave" type="button" class="ghost" hidden>Sair</button>
+          <button id="live-join" type="button" data-i18n="chat.liveJoin">Join live</button>
+          <button id="live-leave" type="button" class="ghost" hidden data-i18n="chat.liveLeave">Leave</button>
           <button id="live-mic" type="button" class="ghost" disabled>Mic</button>
-          <button id="live-cam" type="button" class="ghost" disabled>Câm</button>
+          <button id="live-cam" type="button" class="ghost" disabled>Cam</button>
         </div>
         <p id="live-roster" class="muted live-roster"></p>
       </aside>
@@ -45,7 +45,7 @@
     <div class="bottom-dock">
       <div id="agent-activity" class="agent-activity" hidden>
         <div class="agent-activity-head">
-          <span>Atividade do agente</span>
+          <span data-i18n="chat.agentActivity">Agent activity</span>
           <span id="turn-clock" class="turn-clock muted"></span>
         </div>
         <pre id="agent-activity-body" class="agent-activity-body"></pre>
@@ -56,14 +56,15 @@
         <textarea
           id="text"
           rows="3"
-          placeholder="Escreva sua mensagem… (Shift+Enter para nova linha). Digitação espelhada ao vivo na sala."
+          data-i18n-placeholder="chat.composerPlaceholder"
+          placeholder="Write a message… (Shift+Enter for a new line). Typing is mirrored live in the room."
         ></textarea>
         <div class="composer-actions">
           <label class="file-btn">
-            Anexar
+            <span data-i18n="chat.attach">Attach</span>
             <input id="files" type="file" multiple hidden />
           </label>
-          <button id="send" type="submit">Enviar</button>
+          <button id="send" type="submit" data-i18n="chat.send">Send</button>
         </div>
       </form>
     </div>

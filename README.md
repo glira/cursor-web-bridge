@@ -1,6 +1,6 @@
 # Cursor Web Bridge
 
-> Password-gated collaborative web room for a **local Cursor Agent**. Point it at *your* workspace, share one agent session with the team, and work from the browser (or phone via Ngrok) without each person needing the IDE.
+> Password-gated collaborative web room for a **local Cursor Agent**. Point it at *your* workspace, share one agent session with the team, and work from the browser (or phone via a fixed Cloudflare Tunnel / Ngrok) without each person needing the IDE.
 
 A password-protected local web chat, connected to the **Cursor IDE via CDP** (default) or to a `@cursor/sdk` agent (optional). Any team attaches **their own project** and works together on the same agent.
 
@@ -33,7 +33,7 @@ This project exists to **open that session** — behind a password — to anyone
 - **Pair / mob with a single agent** — one host keeps Cursor open; the team drives from the panel
 - **Group review and diagnosis** — product, support, and engineering see the same investigation
 - **Onboarding** — someone follows the agent without installing Cursor
-- **On-call** — phone or another PC via Ngrok + password
+- **On-call** — phone or another PC via Cloudflare Tunnel (fixed URL) or Ngrok + password
 - **Handoff** — room history survives refresh and late join
 
 ## Advantages
@@ -64,7 +64,7 @@ flowchart LR
 
 ## Quick start (local)
 
-Prerequisites: **Node.js 20+**, Cursor installed, [Ngrok](https://ngrok.com/) if you will expose it to the team, and `zip` on PATH (folders under `/tmp` without a sibling zip).
+Prerequisites: **Node.js 20+**, Cursor installed, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/) (fixed team URL) or [Ngrok](https://ngrok.com/) (ad-hoc), and `zip` on PATH (folders under `/tmp` without a sibling zip).
 
 ```bash
 git clone https://github.com/glira/cursor-web-bridge.git
@@ -82,7 +82,7 @@ Edit `.env`:
 ```bash
 npm install
 npm run dev
-# or: ./start-local.sh   (bridge + ngrok)
+# or: ./start-local.sh   (bridge + tunnel; see Remote team below)
 ```
 
 Open `http://127.0.0.1:8787`, sign in with **name + password**, and send a test prompt.
@@ -107,17 +107,60 @@ Then:
 
 Health should show `ok: true`, `hasChatInput: true`, and a `targetTitle` that matches `CURSOR_CDP_TARGET`. If only another window exists, health fails on purpose — open the right folder.
 
-### Remote team (Ngrok)
+### Remote team (Cloudflare Tunnel — fixed URL)
 
-With the bridge running, in another terminal (or via `./start-local.sh`):
+Recommended for a stable hostname (example: `https://bridge.example.com`). Workers / the Cloudflare Workers MCP cannot reach localhost; use **Tunnel + Access**, not a Worker custom domain on `bridge`.
 
-```bash
-ngrok http 8787
+**One-time setup (operator):**
+
+1. Confirm zone `example.com` is **Active** in the Cloudflare account you will use for `cloudflared login`.
+2. Install `cloudflared`, then: `cloudflared tunnel login` and `cloudflared tunnel create cursor-web-bridge`.
+3. DNS: CNAME `bridge` → `<tunnel-id>.cfargotunnel.com` (**Proxied**). Do **not** attach a Worker Domain to the same hostname.
+4. Ingress in `~/.cloudflared/config.yml` (or the file pointed by `CLOUDFLARE_CONFIG`):
+
+```yaml
+tunnel: <tunnel-id>
+credentials-file: /home/YOU/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: bridge.example.com
+    service: http://127.0.0.1:8787
+  - service: http_status:404
 ```
 
-1. Share the `https://….ngrok-free.app` URL **and** the password (not just the link)
-2. Each person signs in with a distinct name
+5. Zero Trust → Access → Application on `bridge.example.com` with an Allow policy for team emails. Room password (`BRIDGE_PASSWORD`) stays as a second factor.
+
+**Run:**
+
+```bash
+# .env
+TUNNEL_PROVIDER=cloudflare
+CLOUDFLARE_TUNNEL_NAME=cursor-web-bridge
+# or: CLOUDFLARE_CONFIG=/path/to/config.yml
+BRIDGE_PUBLIC_URL=https://bridge.example.com
+
+./start-local.sh
+```
+
+1. Share **`BRIDGE_PUBLIC_URL` and the room password** (not just the link)
+2. Teammates pass Access, then sign in with a distinct display name
 3. The host machine must stay on: the agent runs **locally**
+4. When the session ends: stop the script (stops `cloudflared`) and/or revoke Access policies as needed
+
+HTTPS from Cloudflare enables camera/mic. Difficult NATs may still need TURN (`RTC_TURN_*`).
+
+### Remote team (Ngrok — ad-hoc)
+
+Ephemeral URL; fine for a one-off session:
+
+```bash
+TUNNEL_PROVIDER=ngrok ./start-local.sh
+# or: ngrok http 8787
+```
+
+1. Share the `https://….ngrok-free.app` URL **and** the password
+2. Each person signs in with a distinct name
+3. Host machine stays on
 
 HTTPS is required off localhost for camera/mic.
 
@@ -169,6 +212,12 @@ When the agent prints paths such as `/tmp/report.zip` or `file:///tmp/folder/`, 
 | `CDP_MAX_TIMEOUT_MS` | Absolute CDP turn cap (default `2700000` = 45 min) |
 | `RTC_STUN_URLS` | STUN for WebRTC |
 | `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | Optional TURN |
+| `TUNNEL_PROVIDER` | `ngrok` (default in `.env.example`) or `cloudflare` — used by `./start-local.sh` |
+| `CLOUDFLARED_BIN` | Optional path/name for `cloudflared` |
+| `CLOUDFLARE_TUNNEL_NAME` | Tunnel name for `cloudflared tunnel run` (default `cursor-web-bridge`) |
+| `CLOUDFLARE_CONFIG` | Optional path to `config.yml` (alternative to tunnel name) |
+| `BRIDGE_PUBLIC_URL` | Fixed public URL printed by `./start-local.sh` (e.g. `https://bridge.example.com`) |
+| `NGROK_BIN` | Optional path/name for `ngrok` |
 
 ## Scripts
 
@@ -176,12 +225,12 @@ When the agent prints paths such as `/tmp/report.zip` or `file:///tmp/folder/`, 
 npm run dev        # watch
 npm start          # simple production
 npm run typecheck  # tsc --noEmit
-./start-local.sh   # bridge + ngrok
+./start-local.sh   # bridge + cloudflared or ngrok (TUNNEL_PROVIDER)
 ```
-
 ## Security
 
 - Anyone with **password + URL** talks to an agent that can read/edit `CURSOR_CWD` and download registered `/tmp` artifacts.
+- Prefer Cloudflare Access in front of the fixed Tunnel hostname so only team emails reach the room login.
 - Cookie is `HttpOnly` + `SameSite=Lax`; `Secure` on HTTPS. It carries `displayName` + `clientId`.
 - Login has a simple per-IP rate limit.
 - Do not share `.env` or log `CURSOR_API_KEY` / the password.

@@ -603,7 +603,7 @@ if (config.backend === "cdp") {
 }
 console.log(`[bridge] starting on http://127.0.0.1:${config.port}`);
 console.log(`[bridge] health: http://127.0.0.1:${config.port}/api/health`);
-console.log(`[bridge] then: ngrok http ${config.port}`);
+console.log(`[bridge] then: ./start-local.sh  (or: cloudflared / ngrok http ${config.port})`);
 
 const server = serve(
   {

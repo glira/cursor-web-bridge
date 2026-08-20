@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Sobe o bridge local + ngrok na mesma sessão.
+# Sobe o bridge local + túnel (Cloudflare ou Ngrok) na mesma sessão.
 # Uso: ./start-local.sh
 #      PORT=8788 ./start-local.sh
-# Ctrl+C encerra os dois.
+#      TUNNEL_PROVIDER=cloudflare ./start-local.sh
+# Ctrl+C encerra bridge + túnel.
 
 set -euo pipefail
 
@@ -17,17 +18,39 @@ if [[ -f .env ]]; then
 fi
 
 PORT="${PORT:-8787}"
+TUNNEL_PROVIDER="${TUNNEL_PROVIDER:-ngrok}"
 NGROK_BIN="${NGROK_BIN:-ngrok}"
+CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
+CLOUDFLARE_TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-cursor-web-bridge}"
+BRIDGE_PUBLIC_URL="${BRIDGE_PUBLIC_URL:-}"
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "erro: npm não encontrado no PATH" >&2
   exit 1
 fi
 
-if ! command -v "$NGROK_BIN" >/dev/null 2>&1; then
-  echo "erro: ngrok não encontrado no PATH (instale ou defina NGROK_BIN)" >&2
-  exit 1
-fi
+case "$TUNNEL_PROVIDER" in
+  ngrok)
+    if ! command -v "$NGROK_BIN" >/dev/null 2>&1; then
+      echo "erro: ngrok não encontrado no PATH (instale ou defina NGROK_BIN)" >&2
+      exit 1
+    fi
+    ;;
+  cloudflare)
+    if ! command -v "$CLOUDFLARED_BIN" >/dev/null 2>&1; then
+      echo "erro: cloudflared não encontrado no PATH (instale ou defina CLOUDFLARED_BIN)" >&2
+      exit 1
+    fi
+    if [[ -z "${CLOUDFLARE_CONFIG:-}" && -z "${CLOUDFLARE_TUNNEL_NAME:-}" ]]; then
+      echo "erro: defina CLOUDFLARE_TUNNEL_NAME ou CLOUDFLARE_CONFIG no .env" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "erro: TUNNEL_PROVIDER inválido (${TUNNEL_PROVIDER}). Use cloudflare ou ngrok." >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -d node_modules ]]; then
   echo "→ npm install"
@@ -55,7 +78,6 @@ port_in_use() {
     lsof -iTCP:"${port}" -sTCP:LISTEN -n -P >/dev/null 2>&1
     return $?
   fi
-  # fallback: tentativa de bind via bash /dev/tcp não detecta bem; usa curl
   return 1
 }
 
@@ -67,7 +89,7 @@ bridge_healthy() {
 
 if port_in_use "$PORT"; then
   if bridge_healthy; then
-    echo "aviso: bridge já responde em http://127.0.0.1:${PORT} — só subindo ngrok"
+    echo "aviso: bridge já responde em http://127.0.0.1:${PORT} — só subindo túnel (${TUNNEL_PROVIDER})"
   else
     echo "erro: porta ${PORT} já em uso por outro processo:" >&2
     port_holder "$PORT" >&2 || true
@@ -83,18 +105,17 @@ else
 fi
 
 BRIDGE_PID=""
-NGROK_PID=""
+TUNNEL_PID=""
 
 cleanup() {
   trap - EXIT INT TERM
   echo
   echo "→ encerrando..."
-  if [[ -n "$NGROK_PID" ]] && kill -0 "$NGROK_PID" 2>/dev/null; then
-    kill "$NGROK_PID" 2>/dev/null || true
-    wait "$NGROK_PID" 2>/dev/null || true
+  if [[ -n "$TUNNEL_PID" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
+    kill "$TUNNEL_PID" 2>/dev/null || true
+    wait "$TUNNEL_PID" 2>/dev/null || true
   fi
   if [[ -n "$BRIDGE_PID" ]] && kill -0 "$BRIDGE_PID" 2>/dev/null; then
-    # mata o grupo do npm/tsx (filhos inclusos)
     kill "$BRIDGE_PID" 2>/dev/null || true
     pkill -P "$BRIDGE_PID" 2>/dev/null || true
     wait "$BRIDGE_PID" 2>/dev/null || true
@@ -124,18 +145,48 @@ if [[ "$SKIP_BRIDGE" -eq 0 ]]; then
   fi
 fi
 
-echo "→ ngrok http ${PORT}"
-"$NGROK_BIN" http "$PORT" &
-NGROK_PID=$!
+start_tunnel() {
+  case "$TUNNEL_PROVIDER" in
+    cloudflare)
+      if [[ -n "${CLOUDFLARE_CONFIG:-}" ]]; then
+        echo "→ cloudflared tunnel --config ${CLOUDFLARE_CONFIG} run"
+        "$CLOUDFLARED_BIN" tunnel --config "$CLOUDFLARE_CONFIG" run &
+      else
+        echo "→ cloudflared tunnel run ${CLOUDFLARE_TUNNEL_NAME}"
+        "$CLOUDFLARED_BIN" tunnel run "$CLOUDFLARE_TUNNEL_NAME" &
+      fi
+      TUNNEL_PID=$!
+      ;;
+    ngrok)
+      echo "→ ngrok http ${PORT}"
+      "$NGROK_BIN" http "$PORT" &
+      TUNNEL_PID=$!
+      ;;
+  esac
+}
+
+start_tunnel
 
 echo
 echo "Pronto. Local: http://127.0.0.1:${PORT}"
-echo "URL pública: painel do ngrok (http://127.0.0.1:4040) ou saída do processo."
-echo "Ctrl+C para parar bridge + ngrok."
+case "$TUNNEL_PROVIDER" in
+  cloudflare)
+    if [[ -n "$BRIDGE_PUBLIC_URL" ]]; then
+      echo "URL pública: ${BRIDGE_PUBLIC_URL}"
+    else
+      echo "URL pública: hostname do ingress (ex. https://bridge.example.com) — defina BRIDGE_PUBLIC_URL no .env para imprimir aqui."
+    fi
+    echo "Ctrl+C para parar bridge + cloudflared."
+    ;;
+  ngrok)
+    echo "URL pública: painel do ngrok (http://127.0.0.1:4040) ou saída do processo."
+    echo "Ctrl+C para parar bridge + ngrok."
+    ;;
+esac
 echo
 
 if [[ -n "$BRIDGE_PID" ]]; then
-  wait "$BRIDGE_PID" "$NGROK_PID"
+  wait "$BRIDGE_PID" "$TUNNEL_PID"
 else
-  wait "$NGROK_PID"
+  wait "$TUNNEL_PID"
 fi

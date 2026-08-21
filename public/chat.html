@@ -72,6 +72,20 @@
       </form>
     </div>
 
+    <dialog id="delete-message-dialog" class="modal">
+      <div class="modal-card">
+        <h2 data-i18n="delete.title">Delete this message?</h2>
+        <p class="muted" data-i18n="delete.body">
+          This removes the message from the Bridge room only. The chat in Cursor is not deleted.
+        </p>
+        <p id="delete-message-error" class="error" hidden></p>
+        <div class="modal-actions">
+          <button id="delete-message-cancel" type="button" class="ghost" data-i18n="delete.cancel">Cancel</button>
+          <button id="delete-message-confirm" type="button" class="danger" data-i18n="delete.confirm">Delete</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="clear-history-dialog" class="modal">
       <div class="modal-card">
         <h2 data-i18n="clear.title">Clear room history?</h2>
@@ -88,6 +102,6 @@
       </div>
     </dialog>
 
-    <script src="/chat.js?v=3" type="module"></script>
+    <script src="/chat.js?v=4" type="module"></script>
   </body>
 </html>

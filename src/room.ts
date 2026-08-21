@@ -16,6 +16,7 @@ export type RoomEventType =
   | "artifact"
   | "room_error"
   | "history_cleared"
+  | "message_deleted"
   | "busy"
   | "rtc_peer_joined"
   | "rtc_peer_left"

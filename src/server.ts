@@ -30,7 +30,7 @@ import {
   resolveSafeTmpPath,
   zipDirectoryToTemp,
 } from "./artifacts.js";
-import { appendHistory, clearHistory } from "./history.js";
+import { appendHistory, clearHistory, deleteHistoryMessage } from "./history.js";
 import {
   broadcast,
   buildSnapshot,
@@ -44,6 +44,7 @@ import {
   publishArtifacts,
   relayRtcSignal,
   setRoomBusy,
+  getStreamingMessageId,
   setStreamingMessageId,
   subscribe,
 } from "./room.js";
@@ -289,6 +290,42 @@ app.post("/api/history/clear", requireAuth, async (c) => {
     at: Date.now(),
   });
   console.log(`[history] cleared by=${user.displayName}`);
+  return c.json({ ok: true });
+});
+
+app.post("/api/history/delete", requireAuth, async (c) => {
+  const user = getSessionUser(c)!;
+  let id = "";
+  try {
+    const body = await c.req.json<{ id?: string }>();
+    id = typeof body.id === "string" ? body.id.trim() : "";
+  } catch {
+    return apiError(c, "invalid_json", 400);
+  }
+  if (!id) return apiError(c, "history_id_required", 400);
+  if (getStreamingMessageId() === id) {
+    return apiError(c, "history_message_in_progress", 409);
+  }
+
+  try {
+    const result = await deleteHistoryMessage(id);
+    if (!result.ok) return apiError(c, "history_message_missing", 404);
+  } catch (err) {
+    return c.json(
+      {
+        error:
+          err instanceof Error ? err.message : tApi(localeFromContext(c), "history_delete_failed"),
+      },
+      500,
+    );
+  }
+
+  broadcast({
+    type: "message_deleted",
+    data: { id, deletedBy: user.displayName },
+    at: Date.now(),
+  });
+  console.log(`[history] deleted id=${id} by=${user.displayName}`);
   return c.json({ ok: true });
 });
 

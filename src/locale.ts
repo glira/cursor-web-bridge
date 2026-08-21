@@ -27,6 +27,10 @@ const messages: Record<UiLocale, Record<string, string>> = {
     image_only: "(image)",
     attachments_prefix: "[attachments: {names}]",
     history_clear_failed: "Could not clear history",
+    history_id_required: "Message id is required.",
+    history_message_missing: "Message not found.",
+    history_message_in_progress: "Cannot delete a reply that is still running.",
+    history_delete_failed: "Could not delete the message",
   },
   pt: {
     too_many_attempts: "Muitas tentativas. Aguarde e tente de novo.",
@@ -52,6 +56,10 @@ const messages: Record<UiLocale, Record<string, string>> = {
     image_only: "(imagem)",
     attachments_prefix: "[anexos: {names}]",
     history_clear_failed: "Não foi possível limpar o histórico",
+    history_id_required: "O id da mensagem é obrigatório.",
+    history_message_missing: "Mensagem não encontrada.",
+    history_message_in_progress: "Não é possível apagar uma resposta ainda em execução.",
+    history_delete_failed: "Não foi possível apagar a mensagem",
   },
 };
 
@@ -92,7 +100,7 @@ export function tApi(
 export function apiError(
   c: Context,
   key: string,
-  status: 400 | 401 | 409 | 429 | 500,
+  status: 400 | 401 | 404 | 409 | 429 | 500,
   vars: Record<string, string> = {},
 ) {
   return c.json({ error: tApi(localeFromContext(c), key, vars) }, status);

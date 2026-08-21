@@ -60,6 +60,14 @@ const dictionaries = {
     "clear.confirm": "Clear history",
     "clear.done": "{name} cleared the room history.",
     "clear.failed": "Could not clear history",
+    "delete.button": "Delete",
+    "delete.title": "Delete this message?",
+    "delete.body":
+      "This removes the message from the Bridge room only. The chat in Cursor is not deleted.",
+    "delete.cancel": "Cancel",
+    "delete.confirm": "Delete",
+    "delete.failed": "Could not delete the message",
+    "delete.done": "{name} deleted a message.",
   },
   pt: {
     "login.title": "Cursor Bridge — Login",
@@ -122,6 +130,14 @@ const dictionaries = {
     "clear.confirm": "Limpar histórico",
     "clear.done": "{name} limpou o histórico da sala.",
     "clear.failed": "Não foi possível limpar o histórico",
+    "delete.button": "Excluir",
+    "delete.title": "Apagar esta mensagem?",
+    "delete.body":
+      "Isso remove a mensagem só da sala do Bridge. O chat do Cursor não é apagado.",
+    "delete.cancel": "Cancelar",
+    "delete.confirm": "Excluir",
+    "delete.failed": "Não foi possível apagar a mensagem",
+    "delete.done": "{name} apagou uma mensagem.",
   },
 };
 

@@ -1,5 +1,5 @@
 import { createRoomRtc } from "./rtc.js";
-import { t, applyI18n } from "./i18n.js?v=3";
+import { t, applyI18n } from "./i18n.js?v=4";
 
 applyI18n();
 
@@ -15,6 +15,10 @@ const clearHistoryDialog = document.getElementById("clear-history-dialog");
 const clearHistoryCancel = document.getElementById("clear-history-cancel");
 const clearHistoryConfirm = document.getElementById("clear-history-confirm");
 const clearHistoryError = document.getElementById("clear-history-error");
+const deleteMessageDialog = document.getElementById("delete-message-dialog");
+const deleteMessageCancel = document.getElementById("delete-message-cancel");
+const deleteMessageConfirm = document.getElementById("delete-message-confirm");
+const deleteMessageError = document.getElementById("delete-message-error");
 const meLabel = document.getElementById("me-label");
 const presenceLabel = document.getElementById("presence-label");
 const busyLabel = document.getElementById("busy-label");
@@ -43,6 +47,8 @@ const bubbleById = new Map();
 const messageMeta = new Map();
 /** @type {Map<string, Set<string>>} */
 const downloadsByMessage = new Map();
+/** @type {string | null} */
+let pendingDeleteId = null;
 
 let localTyping = false;
 let draftTimer = null;
@@ -207,6 +213,7 @@ function updateBubbleMeta(messageId) {
     el.appendChild(metaEl);
   }
   metaEl.textContent = buildMetaText(messageMeta.get(messageId));
+  syncDeleteControl(messageId);
 }
 
 function ensureDownloadsContainer(messageId) {
@@ -270,6 +277,7 @@ function ensureBubble(message) {
       const body = el.querySelector(".bubble-body");
       if (body && message.replaceText) body.textContent = message.text;
     }
+    syncDeleteControl(message.id);
     return el;
   }
 
@@ -277,18 +285,25 @@ function ensureBubble(message) {
   el.className = `bubble ${message.role}`;
   el.dataset.messageId = message.id;
 
-  if (message.role === "user" && message.displayName) {
+  if (message.role === "user" || message.role === "assistant") {
+    const head = document.createElement("div");
+    head.className = "bubble-head";
     const author = document.createElement("div");
     author.className = "bubble-author";
-    author.textContent = message.displayName;
-    el.appendChild(author);
-  }
-
-  if (message.role === "assistant") {
-    const author = document.createElement("div");
-    author.className = "bubble-author";
-    author.textContent = t("meta.agent");
-    el.appendChild(author);
+    author.textContent =
+      message.role === "assistant" ? t("meta.agent") : message.displayName || t("meta.user");
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ghost bubble-delete";
+    del.textContent = t("delete.button");
+    del.hidden = Boolean(message.running);
+    del.addEventListener("click", (e) => {
+      e.preventDefault();
+      openDeleteMessageDialog(message.id);
+    });
+    head.appendChild(author);
+    head.appendChild(del);
+    el.appendChild(head);
   }
 
   const body = document.createElement("div");
@@ -695,6 +710,15 @@ function connectEvents() {
     }
   });
 
+  es.addEventListener("message_deleted", (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      applyMessageDeleted(data.id, data.deletedBy);
+    } catch {
+      /* ignore */
+    }
+  });
+
   es.addEventListener("history_cleared", (ev) => {
     try {
       const data = JSON.parse(ev.data);
@@ -763,7 +787,81 @@ textEl.addEventListener("keydown", (e) => {
   }
 });
 
+function syncDeleteControl(messageId) {
+  const el = bubbleById.get(messageId);
+  if (!el) return;
+  const btn = el.querySelector(".bubble-delete");
+  if (!btn) return;
+  btn.hidden = Boolean(messageMeta.get(messageId)?.running);
+}
+
+function applyMessageDeleted(messageId, deletedBy) {
+  const el = bubbleById.get(messageId);
+  if (el) el.remove();
+  bubbleById.delete(messageId);
+  messageMeta.delete(messageId);
+  downloadsByMessage.delete(messageId);
+  if (pendingDeleteId === messageId) pendingDeleteId = null;
+  if (deletedBy) appendSystem(t("delete.done", { name: deletedBy }));
+}
+
+function closeDeleteMessageDialog() {
+  pendingDeleteId = null;
+  if (typeof deleteMessageDialog.close === "function") {
+    deleteMessageDialog.close();
+  }
+}
+
+function openDeleteMessageDialog(messageId) {
+  const meta = messageMeta.get(messageId);
+  if (!messageId || meta?.running) return;
+  pendingDeleteId = messageId;
+  deleteMessageError.hidden = true;
+  deleteMessageError.textContent = "";
+  deleteMessageConfirm.disabled = false;
+  if (typeof deleteMessageDialog.showModal === "function") {
+    deleteMessageDialog.showModal();
+  }
+}
+
+deleteMessageCancel.addEventListener("click", () => {
+  closeDeleteMessageDialog();
+});
+
+deleteMessageDialog.addEventListener("click", (ev) => {
+  if (ev.target === deleteMessageDialog) closeDeleteMessageDialog();
+});
+
+deleteMessageConfirm.addEventListener("click", async () => {
+  const id = pendingDeleteId;
+  if (!id) return;
+  deleteMessageError.hidden = true;
+  deleteMessageConfirm.disabled = true;
+  try {
+    const res = await fetch("/api/history/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      location.href = "/";
+      return;
+    }
+    if (!res.ok) {
+      throw new Error(data.error || t("delete.failed"));
+    }
+    closeDeleteMessageDialog();
+  } catch (err) {
+    deleteMessageError.textContent = err instanceof Error ? err.message : t("delete.failed");
+    deleteMessageError.hidden = false;
+  } finally {
+    deleteMessageConfirm.disabled = false;
+  }
+});
+
 function applyHistoryCleared(clearedBy) {
+  closeDeleteMessageDialog();
   messagesEl.innerHTML = "";
   bubbleById.clear();
   messageMeta.clear();

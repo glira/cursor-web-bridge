@@ -223,8 +223,8 @@ When the agent prints paths such as `/tmp/report.zip` or `file:///tmp/folder/`, 
 ## Scripts
 
 ```bash
-npm run dev        # watch
-npm start          # simple production
+npm run dev        # watch (needs free inotify instances)
+npm start          # no watch — what ./start-local.sh uses
 npm run typecheck  # tsc --noEmit
 ./start-local.sh   # bridge + cloudflared or ngrok (TUNNEL_PROVIDER)
 ```

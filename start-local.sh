@@ -125,7 +125,9 @@ trap cleanup EXIT INT TERM
 
 if [[ "$SKIP_BRIDGE" -eq 0 ]]; then
   echo "→ bridge at http://127.0.0.1:${PORT}"
-  npm run dev &
+  # `npm start` (no fs.watch). `tsx watch` dies with EMFILE when inotify
+  # instances are already exhausted (Cursor + MCP + desktop apps).
+  npm start &
   BRIDGE_PID=$!
 
   for _ in $(seq 1 60); do

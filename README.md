@@ -17,6 +17,7 @@ What the room provides:
 - Live typing in the composer (last-writer-wins)
 - Live audio/video in the panel (WebRTC mesh)
 - Agent activity (Exploring, tools, Planning) above the composer
+- Cursor **Allow** and **Ask questions** cards forwarded to the room (CDP) so anyone can decide
 - Downloads for `/tmp/...` paths the agent mentions
 - One turn at a time — no race on the composer
 - UI language follows the browser (`pt` or `en`; other locales fall back to English)

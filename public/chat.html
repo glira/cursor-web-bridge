@@ -54,6 +54,17 @@
         <pre id="agent-activity-body" class="agent-activity-body"></pre>
       </div>
 
+      <div id="decision-card" class="decision-card" hidden>
+        <div class="decision-card-inner">
+          <div class="decision-head">
+            <strong id="decision-title"></strong>
+          </div>
+          <p id="decision-prompt" class="decision-prompt"></p>
+          <div id="decision-options" class="decision-options"></div>
+          <p id="decision-status" class="muted decision-status" hidden></p>
+        </div>
+      </div>
+
       <form id="composer" class="composer">
         <div id="file-chips" class="file-chips"></div>
         <textarea
@@ -102,6 +113,6 @@
       </div>
     </dialog>
 
-    <script src="/chat.js?v=4" type="module"></script>
+    <script src="/chat.js?v=5" type="module"></script>
   </body>
 </html>

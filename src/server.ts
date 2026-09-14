@@ -18,7 +18,7 @@ import {
   validateDisplayName,
 } from "./auth.js";
 import { runChatTurn, type ChatAttachmentMeta, type ChatImage } from "./agent.js";
-import { checkCdpHealth } from "./cdp/bridge.js";
+import { checkCdpHealth, clickDecision } from "./cdp/bridge.js";
 import { storeUploadedFile } from "./uploads.js";
 import {
   createFileReadStream,
@@ -34,7 +34,10 @@ import { appendHistory, clearHistory, deleteHistoryMessage } from "./history.js"
 import {
   broadcast,
   buildSnapshot,
+  claimDecision,
+  clearPendingDecision,
   getBusyBy,
+  getPendingDecision,
   heartbeatPresence,
   isRoomBusy,
   joinRtc,
@@ -43,6 +46,8 @@ import {
   newMessageId,
   publishArtifacts,
   relayRtcSignal,
+  releaseDecisionClaim,
+  setPendingDecision,
   setRoomBusy,
   getStreamingMessageId,
   setStreamingMessageId,
@@ -129,6 +134,7 @@ app.get("/api/me", (c) => {
     displayName: user?.displayName ?? null,
     busy: isRoomBusy(),
     busyBy: getBusyBy(),
+    pendingDecision: getPendingDecision(),
     rtc: {
       iceServers: config.rtcIceServers,
       peers: listRtcPeers(),
@@ -565,6 +571,13 @@ app.post("/api/chat", requireAuth, async (c) => {
             at: Date.now(),
           });
         },
+        onDecision: (decision) => {
+          if (decision) {
+            setPendingDecision(decision);
+          } else if (getPendingDecision()) {
+            clearPendingDecision();
+          }
+        },
       },
     });
 
@@ -624,9 +637,58 @@ app.post("/api/chat", requireAuth, async (c) => {
     return c.json({ error: message }, 500);
   } finally {
     setStreamingMessageId(null);
-    setRoomBusy(null);
+    if (!getPendingDecision()) {
+      setRoomBusy(null);
+    }
     console.log(
-      `[chat] turn end messageId=${assistantMessageId} by=${user.displayName}`,
+      `[chat] turn end messageId=${assistantMessageId} by=${user.displayName} pendingDecision=${Boolean(getPendingDecision())}`,
+    );
+  }
+});
+
+app.post("/api/decision", requireAuth, async (c) => {
+  const user = getSessionUser(c)!;
+  if (config.backend !== "cdp") {
+    return apiError(c, "decision_sdk_unsupported", 409);
+  }
+
+  let optionId = "";
+  try {
+    const body = await c.req.json<{ optionId?: string }>();
+    optionId = typeof body.optionId === "string" ? body.optionId.trim() : "";
+  } catch {
+    return apiError(c, "invalid_json", 400);
+  }
+  if (!optionId) return apiError(c, "unknown_decision_option", 400);
+
+  const claim = claimDecision(optionId);
+  if (!claim.ok) {
+    if (claim.reason === "none") return apiError(c, "no_pending_decision", 409);
+    if (claim.reason === "claimed") return apiError(c, "decision_already", 409);
+    return apiError(c, "unknown_decision_option", 400);
+  }
+
+  try {
+    const result = await clickDecision(optionId);
+    if (!result.ok) {
+      if (result.error === "no-card") {
+        clearPendingDecision();
+        return apiError(c, "no_pending_decision", 409);
+      }
+      releaseDecisionClaim();
+      return apiError(c, "decision_click_failed", 500);
+    }
+    clearPendingDecision({ by: user.displayName, optionId });
+    console.log(`[decision] option=${optionId} by=${user.displayName}`);
+    return c.json({ ok: true, optionId, label: result.label || "" });
+  } catch (err) {
+    releaseDecisionClaim();
+    return c.json(
+      {
+        error:
+          err instanceof Error ? err.message : tApi(localeFromContext(c), "decision_click_failed"),
+      },
+      500,
     );
   }
 });

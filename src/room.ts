@@ -2,6 +2,9 @@ import { randomBytes } from "node:crypto";
 import type { ArtifactRecord } from "./artifacts.js";
 import { listArtifacts } from "./artifacts.js";
 import { loadHistory, type HistoryMessage } from "./history.js";
+import type { PendingDecision } from "./types.js";
+
+export type { PendingDecision } from "./types.js";
 
 export type RoomEventType =
   | "snapshot"
@@ -18,6 +21,8 @@ export type RoomEventType =
   | "history_cleared"
   | "message_deleted"
   | "busy"
+  | "decision"
+  | "decision_resolved"
   | "rtc_peer_joined"
   | "rtc_peer_left"
   | "rtc_peers"
@@ -55,6 +60,10 @@ const rtcPeers = new Map<string, RtcPeer>();
 let agentBusy = false;
 let busyBy: { clientId: string; displayName: string } | null = null;
 let streamingMessageId: string | null = null;
+let pendingDecision: PendingDecision | null = null;
+let decisionClaimed = false;
+let suppressDecisionKey = "";
+let suppressDecisionUntil = 0;
 
 export function isRoomBusy(): boolean {
   return agentBusy;
@@ -86,6 +95,69 @@ export function setStreamingMessageId(id: string | null): void {
 
 export function getStreamingMessageId(): string | null {
   return streamingMessageId;
+}
+
+function sameDecision(a: PendingDecision | null, b: PendingDecision | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function getPendingDecision(): PendingDecision | null {
+  return pendingDecision;
+}
+
+export function setPendingDecision(decision: PendingDecision | null): void {
+  if (
+    decision &&
+    Date.now() < suppressDecisionUntil &&
+    JSON.stringify(decision) === suppressDecisionKey
+  ) {
+    return;
+  }
+  if (sameDecision(pendingDecision, decision)) return;
+  pendingDecision = decision;
+  decisionClaimed = false;
+  if (decision) {
+    console.log(`[room] decision kind=${decision.kind} options=${decision.options.length}`);
+    broadcast({ type: "decision", data: decision, at: Date.now() });
+  }
+}
+
+export function claimDecision(optionId: string):
+  | { ok: true; decision: PendingDecision }
+  | { ok: false; reason: "none" | "claimed" | "unknown" } {
+  if (!pendingDecision) return { ok: false, reason: "none" };
+  if (decisionClaimed) return { ok: false, reason: "claimed" };
+  if (!pendingDecision.options.some((option) => option.id === optionId)) {
+    return { ok: false, reason: "unknown" };
+  }
+  decisionClaimed = true;
+  return { ok: true, decision: pendingDecision };
+}
+
+export function releaseDecisionClaim(): void {
+  decisionClaimed = false;
+}
+
+export function clearPendingDecision(extra?: { by?: string; optionId?: string }): void {
+  if (!pendingDecision) return;
+  suppressDecisionKey = JSON.stringify(pendingDecision);
+  suppressDecisionUntil = Date.now() + 4_000;
+  pendingDecision = null;
+  decisionClaimed = false;
+  const by = extra?.by ?? "";
+  const optionId = extra?.optionId ?? "";
+  broadcast({
+    type: "decision_resolved",
+    data: {
+      by,
+      optionId,
+      dismissed: !optionId,
+    },
+    at: Date.now(),
+  });
+  if (!streamingMessageId && agentBusy) {
+    setRoomBusy(null);
+  }
 }
 
 export function broadcast(event: RoomEvent): void {
@@ -243,6 +315,7 @@ export async function buildSnapshot(): Promise<{
   busy: boolean;
   busyBy: { clientId: string; displayName: string } | null;
   streamingMessageId: string | null;
+  pendingDecision: PendingDecision | null;
   rtcPeers: RtcPeer[];
 }> {
   const [messages, artifacts] = await Promise.all([loadHistory(), listArtifacts()]);
@@ -253,6 +326,7 @@ export async function buildSnapshot(): Promise<{
     busy: agentBusy,
     busyBy,
     streamingMessageId,
+    pendingDecision,
     rtcPeers: listRtcPeers(),
   };
 }

@@ -1,5 +1,5 @@
 import { createRoomRtc } from "./rtc.js";
-import { t, applyI18n } from "./i18n.js?v=4";
+import { t, applyI18n } from "./i18n.js?v=5";
 
 applyI18n();
 
@@ -26,6 +26,11 @@ const typingLabel = document.getElementById("typing-label");
 const activityPanel = document.getElementById("agent-activity");
 const activityBody = document.getElementById("agent-activity-body");
 const turnClock = document.getElementById("turn-clock");
+const decisionCard = document.getElementById("decision-card");
+const decisionTitle = document.getElementById("decision-title");
+const decisionPrompt = document.getElementById("decision-prompt");
+const decisionOptions = document.getElementById("decision-options");
+const decisionStatus = document.getElementById("decision-status");
 const liveJoinBtn = document.getElementById("live-join");
 const liveLeaveBtn = document.getElementById("live-leave");
 const liveMicBtn = document.getElementById("live-mic");
@@ -58,6 +63,10 @@ let pinToBottom = true;
 let turnStartedAt = null;
 let turnClockTimer = null;
 let liveElapsedTimer = null;
+/** @type {{ kind?: string, prompt?: string, options?: { id: string, label: string }[] } | null} */
+let currentDecision = null;
+let decisionSubmitting = false;
+let decisionHideTimer = null;
 
 const PIN_THRESHOLD_PX = 80;
 
@@ -456,6 +465,108 @@ function renderPresence(members) {
   });
 }
 
+function hideDecisionCard() {
+  currentDecision = null;
+  decisionSubmitting = false;
+  if (decisionHideTimer) {
+    clearTimeout(decisionHideTimer);
+    decisionHideTimer = null;
+  }
+  decisionCard.hidden = true;
+  decisionTitle.textContent = "";
+  decisionPrompt.textContent = "";
+  decisionPrompt.hidden = true;
+  decisionOptions.replaceChildren();
+  decisionStatus.hidden = true;
+  decisionStatus.textContent = "";
+}
+
+function renderDecision(decision) {
+  if (decisionHideTimer) {
+    clearTimeout(decisionHideTimer);
+    decisionHideTimer = null;
+  }
+  if (!decision || !Array.isArray(decision.options) || decision.options.length === 0) {
+    hideDecisionCard();
+    return;
+  }
+  currentDecision = decision;
+  decisionSubmitting = false;
+  decisionCard.hidden = false;
+  decisionTitle.textContent =
+    decision.kind === "question" ? t("decision.questionTitle") : t("decision.approvalTitle");
+  const prompt = typeof decision.prompt === "string" ? decision.prompt.trim() : "";
+  decisionPrompt.textContent = prompt;
+  decisionPrompt.hidden = !prompt;
+  decisionStatus.hidden = false;
+  decisionStatus.textContent = t("decision.waiting");
+  decisionOptions.replaceChildren();
+  for (const option of decision.options) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = option.label;
+    btn.dataset.optionId = option.id;
+    btn.addEventListener("click", () => {
+      void submitDecision(option.id);
+    });
+    decisionOptions.appendChild(btn);
+  }
+}
+
+function renderDecisionResolved(data) {
+  const by = typeof data?.by === "string" ? data.by : "";
+  const optionId = typeof data?.optionId === "string" ? data.optionId : "";
+  const label =
+    currentDecision?.options?.find((option) => option.id === optionId)?.label || optionId;
+  for (const btn of decisionOptions.querySelectorAll("button")) {
+    btn.disabled = true;
+  }
+  decisionSubmitting = false;
+  if (!by || data?.dismissed) {
+    decisionStatus.hidden = false;
+    decisionStatus.textContent = t("decision.dismissed");
+  } else {
+    decisionStatus.hidden = false;
+    decisionStatus.textContent = t("decision.resolvedBy", { name: by, choice: label });
+  }
+  if (decisionHideTimer) clearTimeout(decisionHideTimer);
+  decisionHideTimer = setTimeout(() => {
+    hideDecisionCard();
+  }, 4000);
+}
+
+async function submitDecision(optionId) {
+  if (!currentDecision || decisionSubmitting) return;
+  decisionSubmitting = true;
+  decisionStatus.hidden = true;
+  decisionStatus.textContent = "";
+  for (const btn of decisionOptions.querySelectorAll("button")) {
+    btn.disabled = true;
+  }
+  try {
+    const res = await fetch("/api/decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId }),
+    });
+    if (res.status === 401) {
+      location.href = "/";
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || t("decision.failed"));
+    }
+  } catch (err) {
+    decisionSubmitting = false;
+    decisionStatus.hidden = false;
+    decisionStatus.textContent = err instanceof Error ? err.message : t("decision.failed");
+    for (const btn of decisionOptions.querySelectorAll("button")) {
+      btn.disabled = false;
+    }
+  }
+}
+
 function renderActivity(lines, elapsedMs) {
   const list = Array.isArray(lines) ? lines.filter(Boolean) : [];
   const awaitingFinal = list.some((l) =>
@@ -520,6 +631,7 @@ function applySnapshot(snapshot) {
   renderPresence(snapshot.members || []);
   setBusy(snapshot.busy, snapshot.busyBy, "snapshot");
   renderActivity([]);
+  renderDecision(snapshot.pendingDecision || null);
   rtc.handleEvent("snapshot", snapshot);
 
   if (snapshot.busy && snapshot.streamingMessageId) {
@@ -658,8 +770,10 @@ function connectEvents() {
           for (const p of data.message.artifactPaths) addDownloadButton(data.message.id, p);
         }
       }
-      setBusy(false, null, "assistant_done");
-      renderActivity([]);
+      if (!currentDecision) {
+        setBusy(false, null, "assistant_done");
+        renderActivity([]);
+      }
     } catch {
       /* ignore */
     }
@@ -681,6 +795,22 @@ function connectEvents() {
       if (data.startedAt) startTurnClock(data.startedAt);
     } catch {
       /* ignore */
+    }
+  });
+
+  es.addEventListener("decision", (ev) => {
+    try {
+      renderDecision(JSON.parse(ev.data));
+    } catch {
+      /* ignore */
+    }
+  });
+
+  es.addEventListener("decision_resolved", (ev) => {
+    try {
+      renderDecisionResolved(JSON.parse(ev.data));
+    } catch {
+      hideDecisionCard();
     }
   });
 
@@ -743,11 +873,13 @@ function connectEvents() {
           updateBubbleMeta(data.messageId);
         }
       }
-      setBusy(false, null, "room_error");
-      renderActivity([]);
+      if (!currentDecision) {
+        setBusy(false, null, "room_error");
+        renderActivity([]);
+      }
     } catch {
       appendSystem(t("ui.roomError"));
-      setBusy(false, null, "room_error-parse");
+      if (!currentDecision) setBusy(false, null, "room_error-parse");
     }
   });
 
@@ -941,6 +1073,7 @@ async function ensureAuth() {
     ? t("chat.meRoom", { name: data.displayName })
     : t("chat.sharedRoom");
   setBusy(data.busy, data.busyBy, "/api/me");
+  renderDecision(data.pendingDecision || null);
   return data;
 }
 

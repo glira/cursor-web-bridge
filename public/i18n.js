@@ -68,6 +68,12 @@ const dictionaries = {
     "delete.confirm": "Delete",
     "delete.failed": "Could not delete the message",
     "delete.done": "{name} deleted a message.",
+    "decision.approvalTitle": "Cursor needs approval",
+    "decision.questionTitle": "The agent has a question",
+    "decision.waiting": "Waiting for someone in the room to choose.",
+    "decision.resolvedBy": "{name} chose “{choice}”.",
+    "decision.dismissed": "Resolved in Cursor.",
+    "decision.failed": "Could not apply the choice in Cursor.",
   },
   pt: {
     "login.title": "Cursor Bridge — Login",
@@ -138,6 +144,12 @@ const dictionaries = {
     "delete.confirm": "Excluir",
     "delete.failed": "Não foi possível apagar a mensagem",
     "delete.done": "{name} apagou uma mensagem.",
+    "decision.approvalTitle": "O Cursor precisa de aprovação",
+    "decision.questionTitle": "O agente tem uma pergunta",
+    "decision.waiting": "Esperando alguém da sala escolher.",
+    "decision.resolvedBy": "{name} escolheu “{choice}”.",
+    "decision.dismissed": "Resolvido no Cursor.",
+    "decision.failed": "Não foi possível aplicar a escolha no Cursor.",
   },
 };
 

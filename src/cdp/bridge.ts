@@ -1,6 +1,7 @@
 import { config } from "../config.js";
-import type { StreamHandlers } from "../types.js";
+import type { PendingDecision, StreamHandlers } from "../types.js";
 import { CdpClient } from "./client.js";
+import { DECISION_HELPERS_JS, type ClickDecisionResult } from "./decision-dom.js";
 
 const CHAT_INPUT_SELECTORS = [
   "#workbench\\.parts\\.auxiliarybar [contenteditable='true']",
@@ -31,7 +32,25 @@ type ChatSnapshot = {
   activityLines: string[];
   /** True only for live-in-progress signals — drives turn end. */
   liveWorking: boolean;
+  pendingDecision: PendingDecision | null;
 };
+
+type ClickWaiter = {
+  optionId: string;
+  resolve: (result: ClickDecisionResult) => void;
+};
+
+let clickWaiter: ClickWaiter | null = null;
+let cdpTurnActive = false;
+
+function decisionKey(decision: PendingDecision | null): string {
+  if (!decision) return "";
+  return JSON.stringify({
+    kind: decision.kind,
+    prompt: decision.prompt,
+    options: decision.options,
+  });
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -156,7 +175,10 @@ async function connectToWorkbench(): Promise<{
 }
 
 async function snapshotChat(client: CdpClient): Promise<ChatSnapshot> {
-  return client.evaluate<ChatSnapshot>(`(() => {
+  return client.evaluate<ChatSnapshot>(
+    "(() => {\n" +
+      DECISION_HELPERS_JS +
+      `
     const humans = [...document.querySelectorAll('[data-message-role="human"]')];
     const assistants = [...document.querySelectorAll('[data-message-role="ai"][data-message-kind="assistant"]')];
     const generating = !!(
@@ -216,8 +238,10 @@ async function snapshotChat(client: CdpClient): Promise<ChatSnapshot> {
       generating,
       activityLines,
       liveWorking,
+      pendingDecision: (function () { try { return collectPendingDecision(); } catch (e) { return null; } })(),
     };
-  })()`);
+  })()`,
+  );
 }
 
 function emitActivity(
@@ -227,7 +251,9 @@ function emitActivity(
 ): void {
   if (!handlers.onActivity) return;
   const lines = [...snap.activityLines];
-  if (snap.generating && !lines.some((l) => /gerando|generating|stop/i.test(l))) {
+  if (snap.pendingDecision) {
+    lines.unshift("Waiting for team decision…");
+  } else if (snap.generating && !lines.some((l) => /gerando|generating|stop/i.test(l))) {
     lines.unshift("Generating…");
   } else if (snap.liveWorking && lines.length === 0) {
     lines.unshift("Working…");
@@ -236,6 +262,87 @@ function emitActivity(
   if (key === prevKey.value) return;
   prevKey.value = key;
   handlers.onActivity(lines);
+}
+
+function emitDecision(
+  handlers: StreamHandlers,
+  snap: ChatSnapshot,
+  prevKey: { value: string },
+): void {
+  const key = decisionKey(snap.pendingDecision);
+  if (key === prevKey.value) return;
+  const appeared = Boolean(key) && !prevKey.value;
+  prevKey.value = key;
+  if (snap.pendingDecision) {
+    console.log(`[cdp] decision=${JSON.stringify(snap.pendingDecision)}`);
+    handlers.onDecision?.(snap.pendingDecision);
+    if (appeared) {
+      handlers.onStatus("cdp-waiting-decision");
+    }
+  } else {
+    handlers.onDecision?.(null);
+  }
+}
+
+async function clickDecisionOnClient(
+  client: CdpClient,
+  optionId: string,
+): Promise<ClickDecisionResult> {
+  const result = await client.evaluate<ClickDecisionResult>(
+    "(() => {\n" +
+      DECISION_HELPERS_JS +
+      "\nreturn clickPendingOption(" +
+      JSON.stringify(optionId) +
+      ");\n})()",
+  );
+  if (!result) return { ok: false, error: "no-card" };
+  return result;
+}
+
+export async function clickDecision(optionId: string): Promise<ClickDecisionResult> {
+  const id = optionId.trim();
+  if (!id) return { ok: false, error: "unknown-option" };
+
+  if (cdpTurnActive) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (clickWaiter?.optionId === id) clickWaiter = null;
+        resolve({ ok: false, error: "click-timeout" });
+      }, 20_000);
+      clickWaiter = {
+        optionId: id,
+        resolve: (result) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(result);
+        },
+      };
+    });
+  }
+
+  const { client } = await connectToWorkbench();
+  try {
+    return await clickDecisionOnClient(client, id);
+  } finally {
+    client.disconnect();
+  }
+}
+
+async function flushClickWaiter(client: CdpClient): Promise<void> {
+  if (!clickWaiter) return;
+  const req = clickWaiter;
+  clickWaiter = null;
+  try {
+    const result = await clickDecisionOnClient(client, req.optionId);
+    console.log(`[cdp] clickDecision option=${req.optionId} ok=${result.ok} ${result.error || result.label || ""}`);
+    req.resolve(result);
+  } catch (err) {
+    req.resolve({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 async function focusChatInput(client: CdpClient): Promise<string> {
@@ -363,6 +470,7 @@ export async function runCdpChatTurn(opts: {
 
   const { client, target } = await connectToWorkbench();
   opts.handlers.onStatus(`cdp=${target.title || target.id} (want=${config.cursorCdpTarget})`);
+  cdpTurnActive = true;
 
   try {
     const before = await snapshotChat(client);
@@ -386,6 +494,7 @@ export async function runCdpChatTurn(opts: {
     let lastDiagAt = 0;
     let stillWorkingAtEnd = false;
     const activityPrev = { value: "" };
+    const decisionPrev = { value: "" };
     const turnStart = Date.now();
     const hardCap = turnStart + config.cdpMaxTimeoutMs;
     let deadline = Math.min(turnStart + config.cdpTimeoutMs, hardCap);
@@ -393,11 +502,13 @@ export async function runCdpChatTurn(opts: {
     let endReason = "timeout";
 
     while (Date.now() < deadline) {
+      await flushClickWaiter(client);
       const snap = await snapshotChat(client);
       if (snap.generating) sawGenerating = true;
       if (snap.liveWorking) sawLiveWorking = true;
       if (snap.activityLines.length > 0) sawActivityHist = true;
 
+      emitDecision(opts.handlers, snap, decisionPrev);
       emitActivity(opts.handlers, snap, activityPrev);
 
       const assistants = snap.assistantTexts;
@@ -409,18 +520,21 @@ export async function runCdpChatTurn(opts: {
             : "";
 
       // Do NOT use historical activityLines here — finished Grep/Shell cards linger in the DOM.
-      const stillWorking = snap.generating || snap.liveWorking;
+      const stillWorking = snap.generating || snap.liveWorking || Boolean(snap.pendingDecision);
       stillWorkingAtEnd = stillWorking;
 
-      // Soft-extend while the agent is active; never past the absolute hard cap.
-      if (stillWorking) {
+      // Soft-extend while the agent is active; never past the absolute hard cap —
+      // except a pending Allow/poll waits for a human, so keep the loop alive.
+      if (snap.pendingDecision) {
+        deadline = Date.now() + config.cdpTimeoutMs;
+      } else if (stillWorking) {
         deadline = Math.min(Date.now() + config.cdpTimeoutMs, hardCap);
       }
 
       if (Date.now() - lastDiagAt > 5_000) {
         lastDiagAt = Date.now();
         console.log(
-          `[cdp] stillWorking generating=${snap.generating} live=${snap.liveWorking} activityHist=${snap.activityLines.length} len=${lastAssistant.length} stable=${stableTicks} elapsed=${Date.now() - turnStart}ms deadlineLeft=${Math.max(0, deadline - Date.now())}ms`,
+          `[cdp] stillWorking generating=${snap.generating} live=${snap.liveWorking} decision=${snap.pendingDecision?.kind || "-"} activityHist=${snap.activityLines.length} len=${lastAssistant.length} stable=${stableTicks} elapsed=${Date.now() - turnStart}ms deadlineLeft=${Math.max(0, deadline - Date.now())}ms`,
         );
       }
 
@@ -503,6 +617,11 @@ export async function runCdpChatTurn(opts: {
       status,
     };
   } finally {
+    if (clickWaiter) {
+      clickWaiter.resolve({ ok: false, error: "turn-ended" });
+      clickWaiter = null;
+    }
+    cdpTurnActive = false;
     client.disconnect();
   }
 }

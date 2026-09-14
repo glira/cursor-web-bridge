@@ -31,6 +31,12 @@ const messages: Record<UiLocale, Record<string, string>> = {
     history_message_missing: "Message not found.",
     history_message_in_progress: "Cannot delete a reply that is still running.",
     history_delete_failed: "Could not delete the message",
+    no_pending_decision: "There is no decision waiting in Cursor.",
+    decision_already: "Someone already chose an option.",
+    unknown_decision_option: "That option is not on the current card.",
+    decision_click_failed: "Could not click the option in Cursor.",
+    decision_sdk_unsupported:
+      "Team decisions are only available in CDP mode. SDK mode auto-runs tools.",
   },
   pt: {
     too_many_attempts: "Muitas tentativas. Aguarde e tente de novo.",
@@ -60,6 +66,12 @@ const messages: Record<UiLocale, Record<string, string>> = {
     history_message_missing: "Mensagem não encontrada.",
     history_message_in_progress: "Não é possível apagar uma resposta ainda em execução.",
     history_delete_failed: "Não foi possível apagar a mensagem",
+    no_pending_decision: "Não há decisão aguardando no Cursor.",
+    decision_already: "Alguém já escolheu uma opção.",
+    unknown_decision_option: "Essa opção não está no cartão atual.",
+    decision_click_failed: "Não foi possível clicar na opção no Cursor.",
+    decision_sdk_unsupported:
+      "Decisões do time só existem no modo CDP. O modo SDK executa as ferramentas sozinho.",
   },
 };
 

@@ -349,6 +349,54 @@ button.danger {
   overflow-y: auto;
 }
 
+.decision-card {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 16px 0;
+}
+
+.decision-card-inner {
+  margin: 0 0 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  border-radius: 12px;
+  background: #141c28;
+}
+
+.decision-head {
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.decision-prompt {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.decision-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.decision-options button {
+  min-height: 44px;
+  flex: 1 1 auto;
+  min-width: min(100%, 140px);
+  width: auto;
+  padding: 8px 14px;
+}
+
+.decision-status {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+}
+
 .bubble {
   max-width: min(720px, 92%);
   padding: 12px 14px;

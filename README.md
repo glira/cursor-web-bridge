@@ -138,6 +138,7 @@ ingress:
 # .env
 TUNNEL_PROVIDER=cloudflare
 CLOUDFLARE_TUNNEL_NAME=cursor-web-bridge
+# remotely-managed tunnel (no cert.pem): CLOUDFLARE_TOKEN_FILE=~/.cloudflared/cursor-web-bridge.token
 # or: CLOUDFLARE_CONFIG=/path/to/config.yml
 BRIDGE_PUBLIC_URL=https://bridge.example.com
 
@@ -216,7 +217,8 @@ When the agent prints paths such as `/tmp/report.zip` or `file:///tmp/folder/`, 
 | `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | Optional TURN |
 | `TUNNEL_PROVIDER` | `ngrok` (default in `.env.example`) or `cloudflare` — used by `./start-local.sh` |
 | `CLOUDFLARED_BIN` | Optional path/name for `cloudflared` |
-| `CLOUDFLARE_TUNNEL_NAME` | Tunnel name for `cloudflared tunnel run` (default `cursor-web-bridge`) |
+| `CLOUDFLARE_TUNNEL_NAME` | Tunnel name for `cloudflared tunnel run` (default `cursor-web-bridge`; needs `cert.pem`) |
+| `CLOUDFLARE_TOKEN_FILE` | Token file for a remotely-managed tunnel (`cloudflared tunnel run --token-file`; no `cert.pem`) |
 | `CLOUDFLARE_CONFIG` | Optional path to `config.yml` (alternative to tunnel name) |
 | `BRIDGE_PUBLIC_URL` | Fixed public URL printed by `./start-local.sh` (e.g. `https://bridge.example.com`) |
 | `NGROK_BIN` | Optional path/name for `ngrok` |

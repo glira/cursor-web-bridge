@@ -23,6 +23,14 @@ NGROK_BIN="${NGROK_BIN:-ngrok}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
 CLOUDFLARE_TUNNEL_NAME="${CLOUDFLARE_TUNNEL_NAME:-cursor-web-bridge}"
 BRIDGE_PUBLIC_URL="${BRIDGE_PUBLIC_URL:-}"
+CLOUDFLARE_TOKEN_FILE="${CLOUDFLARE_TOKEN_FILE:-}"
+if [[ -z "$CLOUDFLARE_TOKEN_FILE" && -n "$CLOUDFLARE_TUNNEL_NAME" ]]; then
+  _token_guess="$HOME/.cloudflared/${CLOUDFLARE_TUNNEL_NAME}.token"
+  if [[ -f "$_token_guess" ]]; then
+    CLOUDFLARE_TOKEN_FILE="$_token_guess"
+  fi
+fi
+unset _token_guess
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "error: npm not found in PATH" >&2
@@ -41,8 +49,8 @@ case "$TUNNEL_PROVIDER" in
       echo "error: cloudflared not found in PATH (install it or set CLOUDFLARED_BIN)" >&2
       exit 1
     fi
-    if [[ -z "${CLOUDFLARE_CONFIG:-}" && -z "${CLOUDFLARE_TUNNEL_NAME:-}" ]]; then
-      echo "error: set CLOUDFLARE_TUNNEL_NAME or CLOUDFLARE_CONFIG in .env" >&2
+    if [[ -z "${CLOUDFLARE_CONFIG:-}" && -z "${CLOUDFLARE_TOKEN_FILE:-}" && -z "${CLOUDFLARE_TUNNEL_NAME:-}" ]]; then
+      echo "error: set CLOUDFLARE_TOKEN_FILE, CLOUDFLARE_TUNNEL_NAME, or CLOUDFLARE_CONFIG in .env" >&2
       exit 1
     fi
     ;;
@@ -85,6 +93,12 @@ bridge_healthy() {
   local body
   body="$(curl -sf "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
   [[ "$body" == *'"backend"'* ]]
+}
+
+cloudflare_token_running() {
+  [[ -n "${CLOUDFLARE_TOKEN_FILE:-}" ]] || return 1
+  pgrep -af "cloudflared.*(--token-file|token-file).*${CLOUDFLARE_TUNNEL_NAME}\\.token" 2>/dev/null \
+    | grep -v '[p]grep' >/dev/null
 }
 
 if port_in_use "$PORT"; then
@@ -150,7 +164,15 @@ fi
 start_tunnel() {
   case "$TUNNEL_PROVIDER" in
     cloudflare)
-      if [[ -n "${CLOUDFLARE_CONFIG:-}" ]]; then
+      if [[ -n "${CLOUDFLARE_TOKEN_FILE:-}" ]] && cloudflare_token_running; then
+        echo "notice: cloudflared already running with ${CLOUDFLARE_TOKEN_FILE} — not starting another"
+        TUNNEL_PID=""
+        return 0
+      fi
+      if [[ -n "${CLOUDFLARE_TOKEN_FILE:-}" ]]; then
+        echo "→ cloudflared tunnel run --token-file ${CLOUDFLARE_TOKEN_FILE}"
+        "$CLOUDFLARED_BIN" tunnel run --token-file "$CLOUDFLARE_TOKEN_FILE" &
+      elif [[ -n "${CLOUDFLARE_CONFIG:-}" ]]; then
         echo "→ cloudflared tunnel --config ${CLOUDFLARE_CONFIG} run"
         "$CLOUDFLARED_BIN" tunnel --config "$CLOUDFLARE_CONFIG" run &
       else
@@ -158,6 +180,15 @@ start_tunnel() {
         "$CLOUDFLARED_BIN" tunnel run "$CLOUDFLARE_TUNNEL_NAME" &
       fi
       TUNNEL_PID=$!
+      sleep 1
+      if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+        echo "error: cloudflared exited immediately." >&2
+        if [[ ! -f "${HOME}/.cloudflared/cert.pem" && -z "${CLOUDFLARE_TOKEN_FILE:-}" ]]; then
+          echo "hint: named tunnel run needs ~/.cloudflared/cert.pem (cloudflared login)," >&2
+          echo "      or set CLOUDFLARE_TOKEN_FILE to the remote-managed token." >&2
+        fi
+        exit 1
+      fi
       ;;
     ngrok)
       echo "→ ngrok http ${PORT}"
@@ -187,8 +218,20 @@ case "$TUNNEL_PROVIDER" in
 esac
 echo
 
-if [[ -n "$BRIDGE_PID" ]]; then
+if [[ -z "$BRIDGE_PID" && -z "$TUNNEL_PID" ]]; then
+  trap - EXIT INT TERM
+  echo "Already running. Local: http://127.0.0.1:${PORT}"
+  if [[ -n "$BRIDGE_PUBLIC_URL" ]]; then
+    echo "Public URL: ${BRIDGE_PUBLIC_URL}"
+  fi
+  echo "This script did not start a new process. Stop the existing node/cloudflared if you need a restart."
+  exit 0
+fi
+
+if [[ -n "$BRIDGE_PID" && -n "$TUNNEL_PID" ]]; then
   wait "$BRIDGE_PID" "$TUNNEL_PID"
+elif [[ -n "$BRIDGE_PID" ]]; then
+  wait "$BRIDGE_PID"
 else
   wait "$TUNNEL_PID"
 fi

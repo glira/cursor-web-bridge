@@ -30,7 +30,13 @@ import {
   resolveSafeTmpPath,
   zipDirectoryToTemp,
 } from "./artifacts.js";
-import { appendHistory, clearHistory, deleteHistoryMessage } from "./history.js";
+import {
+  appendHistory,
+  clearHistory,
+  deleteHistoryMessage,
+  HISTORY_PAGE,
+  loadHistoryPage,
+} from "./history.js";
 import {
   broadcast,
   buildSnapshot,
@@ -269,6 +275,23 @@ app.get("/api/events", requireAuth, async (c) => {
 
 app.get("/api/artifacts", requireAuth, async (c) => {
   return c.json({ artifacts: await listArtifacts() });
+});
+
+app.get("/api/history", requireAuth, async (c) => {
+  const before = (c.req.query("before") || "").trim();
+  const rawLimit = Number(c.req.query("limit"));
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : HISTORY_PAGE;
+  const page = await loadHistoryPage({
+    limit,
+    beforeId: before || undefined,
+  });
+  if ("error" in page) {
+    return apiError(c, "history_before_invalid", 400);
+  }
+  return c.json({
+    messages: page.messages,
+    hasMore: page.hasMore,
+  });
 });
 
 app.post("/api/history/clear", requireAuth, async (c) => {

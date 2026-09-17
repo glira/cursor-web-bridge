@@ -187,7 +187,7 @@ button.danger {
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .chat-column {
@@ -212,14 +212,22 @@ button.danger {
 }
 
 .live-panel {
-  border-left: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  padding: 12px;
-  overflow-y: auto;
-  min-height: 0;
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 8px 16px 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+}
+
+.live-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
 }
 
 .live-head {
@@ -227,6 +235,14 @@ button.danger {
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
+}
+
+.live-roster {
+  display: none;
+}
+
+.live-panel--on .live-roster {
+  display: block;
 }
 
 .live-hint,
@@ -238,20 +254,31 @@ button.danger {
 }
 
 .live-tiles {
+  display: none;
+  flex-direction: row;
+  gap: 8px;
+  overflow-x: auto;
+  max-height: 88px;
+  min-height: 0;
+}
+
+.live-panel--on .live-tiles {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex: 1;
-  min-height: 120px;
+}
+
+.live-panel--on .live-hint {
+  display: none;
 }
 
 .live-tile {
   position: relative;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   background: #0c1117;
-  aspect-ratio: 4 / 3;
+  width: 88px;
+  height: 88px;
+  flex: 0 0 88px;
 }
 
 .live-tile video {
@@ -280,11 +307,12 @@ button.danger {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-left: auto;
 }
 
 .live-controls button {
-  flex: 1 1 calc(50% - 8px);
-  padding: 8px 10px;
+  width: auto;
+  padding: 7px 12px;
   font-size: 0.82rem;
 }
 
@@ -298,13 +326,18 @@ button.danger {
 @media (max-width: 900px) {
   .chat-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
   }
-  .live-panel {
-    border-left: 0;
-    border-top: 1px solid var(--border);
-    max-height: 260px;
+  .live-hint {
+    display: none;
   }
+}
+
+.history-loader {
+  align-self: center;
+  margin: 0 0 4px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .agent-activity {

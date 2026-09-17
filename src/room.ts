@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ArtifactRecord } from "./artifacts.js";
-import { listArtifacts } from "./artifacts.js";
-import { loadHistory, type HistoryMessage } from "./history.js";
+import { HISTORY_PAGE, loadHistoryPage, type HistoryMessage } from "./history.js";
 import type { PendingDecision } from "./types.js";
 
 export type { PendingDecision } from "./types.js";
@@ -311,6 +310,7 @@ export function relayRtcSignal(opts: {
 export async function buildSnapshot(): Promise<{
   messages: HistoryMessage[];
   artifacts: ArtifactRecord[];
+  historyHasMore: boolean;
   members: PresenceMember[];
   busy: boolean;
   busyBy: { clientId: string; displayName: string } | null;
@@ -318,10 +318,13 @@ export async function buildSnapshot(): Promise<{
   pendingDecision: PendingDecision | null;
   rtcPeers: RtcPeer[];
 }> {
-  const [messages, artifacts] = await Promise.all([loadHistory(), listArtifacts()]);
+  const page = await loadHistoryPage({ limit: HISTORY_PAGE });
+  const messages = "error" in page ? [] : page.messages;
+  const historyHasMore = "error" in page ? false : page.hasMore;
   return {
     messages,
-    artifacts,
+    artifacts: [],
+    historyHasMore,
     members: presenceList(),
     busy: agentBusy,
     busyBy,

@@ -25,27 +25,31 @@
 
     <div class="chat-layout">
       <div class="chat-column">
-        <main id="messages" class="messages" aria-live="polite"></main>
+        <main id="messages" class="messages" aria-live="polite">
+          <div id="history-loader" class="history-loader" hidden></div>
+        </main>
       </div>
-
-      <aside class="live-panel" data-i18n-aria="chat.liveAria" aria-label="Live audio and video">
-        <div class="live-head">
-          <strong>Live</strong>
-          <span id="live-status" class="muted live-status"></span>
-        </div>
-        <p class="muted live-hint" data-i18n="chat.liveHint">Audio and video in the room — no Google Meet.</p>
-        <div id="live-tiles" class="live-tiles"></div>
-        <div class="live-controls">
-          <button id="live-join" type="button" data-i18n="chat.liveJoin">Join live</button>
-          <button id="live-leave" type="button" class="ghost" hidden data-i18n="chat.liveLeave">Leave</button>
-          <button id="live-mic" type="button" class="ghost" disabled>Mic</button>
-          <button id="live-cam" type="button" class="ghost" disabled>Cam</button>
-        </div>
-        <p id="live-roster" class="muted live-roster"></p>
-      </aside>
     </div>
 
     <div class="bottom-dock">
+      <aside class="live-panel" data-i18n-aria="chat.liveAria" aria-label="Live audio and video">
+        <div class="live-strip">
+          <div class="live-head">
+            <strong>Live</strong>
+            <span id="live-status" class="muted live-status"></span>
+          </div>
+          <p class="muted live-hint" data-i18n="chat.liveHint">Audio and video in the room — no Google Meet.</p>
+          <div class="live-controls">
+            <button id="live-join" type="button" data-i18n="chat.liveJoin">Join live</button>
+            <button id="live-leave" type="button" class="ghost" hidden data-i18n="chat.liveLeave">Leave</button>
+            <button id="live-mic" type="button" class="ghost" disabled>Mic</button>
+            <button id="live-cam" type="button" class="ghost" disabled>Cam</button>
+          </div>
+        </div>
+        <div id="live-tiles" class="live-tiles"></div>
+        <p id="live-roster" class="muted live-roster"></p>
+      </aside>
+
       <div id="agent-activity" class="agent-activity" hidden>
         <div class="agent-activity-head">
           <span data-i18n="chat.agentActivity">Agent activity</span>
@@ -113,6 +117,6 @@
       </div>
     </dialog>
 
-    <script src="/chat.js?v=5" type="module"></script>
+    <script src="/chat.js?v=6" type="module"></script>
   </body>
 </html>

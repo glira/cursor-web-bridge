@@ -1,5 +1,5 @@
 import { createRoomRtc } from "./rtc.js";
-import { t, applyI18n } from "./i18n.js?v=5";
+import { t, applyI18n } from "./i18n.js?v=6";
 
 applyI18n();
 
@@ -31,6 +31,8 @@ const decisionTitle = document.getElementById("decision-title");
 const decisionPrompt = document.getElementById("decision-prompt");
 const decisionOptions = document.getElementById("decision-options");
 const decisionStatus = document.getElementById("decision-status");
+const historyLoader = document.getElementById("history-loader");
+const livePanel = document.querySelector(".live-panel");
 const liveJoinBtn = document.getElementById("live-join");
 const liveLeaveBtn = document.getElementById("live-leave");
 const liveMicBtn = document.getElementById("live-mic");
@@ -67,11 +69,17 @@ let liveElapsedTimer = null;
 let currentDecision = null;
 let decisionSubmitting = false;
 let decisionHideTimer = null;
+let historyHasMore = false;
+/** @type {string | null} */
+let oldestLoadedId = null;
+let loadingOlder = false;
 
 const PIN_THRESHOLD_PX = 80;
+const HISTORY_TOP_PX = 80;
 
 function updateLiveControls() {
   const on = rtc.isInLive();
+  if (livePanel) livePanel.classList.toggle("live-panel--on", on);
   liveJoinBtn.hidden = on;
   liveLeaveBtn.hidden = !on;
   liveMicBtn.disabled = !on;
@@ -171,8 +179,84 @@ function scrollToBottomIfPinned() {
   }
 }
 
+function firstHistoryId(messages) {
+  for (const msg of messages || []) {
+    if (msg?.id && msg.role !== "system") return msg.id;
+  }
+  return messages?.[0]?.id || null;
+}
+
+function syncHistoryLoader() {
+  if (!historyLoader) return;
+  if (historyLoader.parentNode !== messagesEl) {
+    messagesEl.insertBefore(historyLoader, messagesEl.firstChild);
+  }
+  if (loadingOlder) {
+    historyLoader.hidden = false;
+    historyLoader.textContent = t("history.loading");
+  } else if (historyHasMore) {
+    historyLoader.hidden = false;
+    historyLoader.textContent = t("history.olderHint");
+  } else {
+    historyLoader.hidden = true;
+    historyLoader.textContent = "";
+  }
+}
+
+async function loadOlderHistory() {
+  if (!historyHasMore || loadingOlder || !oldestLoadedId) return;
+  loadingOlder = true;
+  syncHistoryLoader();
+  const prevHeight = messagesEl.scrollHeight;
+  const prevTop = messagesEl.scrollTop;
+  try {
+    const res = await fetch(
+      `/api/history?before=${encodeURIComponent(oldestLoadedId)}&limit=40`,
+    );
+    if (res.status === 401) {
+      location.href = "/";
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || t("history.loading"));
+    const msgs = Array.isArray(data.messages) ? data.messages : [];
+    if (msgs.length === 0) {
+      historyHasMore = false;
+    } else {
+      historyHasMore = Boolean(data.hasMore);
+      oldestLoadedId = firstHistoryId(msgs) || oldestLoadedId;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const msg of msgs) {
+      if (msg.role === "system") {
+        const el = document.createElement("div");
+        el.className = "bubble system";
+        el.textContent = msg.text;
+        fragment.appendChild(el);
+      } else {
+        ensureBubble(msg, { parent: fragment, skipScroll: true });
+      }
+    }
+    const anchor = historyLoader?.nextSibling || messagesEl.firstChild;
+    messagesEl.insertBefore(fragment, anchor);
+  } catch (err) {
+    console.warn("[ui] older history", err);
+  } finally {
+    const delta = messagesEl.scrollHeight - prevHeight;
+    messagesEl.scrollTop = prevTop + delta;
+    loadingOlder = false;
+    syncHistoryLoader();
+    if (historyHasMore && messagesEl.scrollHeight <= messagesEl.clientHeight + 8) {
+      void loadOlderHistory();
+    }
+  }
+}
+
 messagesEl.addEventListener("scroll", () => {
   pinToBottom = isPinnedToBottom();
+  if (!pinToBottom && messagesEl.scrollTop < HISTORY_TOP_PX) {
+    void loadOlderHistory();
+  }
 });
 
 function buildMetaText(meta) {
@@ -279,7 +363,7 @@ function appendSystem(text) {
   return el;
 }
 
-function ensureBubble(message) {
+function ensureBubble(message, opts = {}) {
   let el = bubbleById.get(message.id);
   if (el) {
     if (message.text != null) {
@@ -324,7 +408,8 @@ function ensureBubble(message) {
   metaEl.className = "bubble-meta";
   el.appendChild(metaEl);
 
-  messagesEl.appendChild(el);
+  const parent = opts.parent || messagesEl;
+  parent.appendChild(el);
   bubbleById.set(message.id, el);
 
   messageMeta.set(message.id, {
@@ -344,7 +429,7 @@ function ensureBubble(message) {
     for (const p of message.artifactPaths) addDownloadButton(message.id, p);
   }
 
-  scrollToBottomIfPinned();
+  if (!opts.skipScroll) scrollToBottomIfPinned();
   return el;
 }
 
@@ -611,21 +696,22 @@ function applySnapshot(snapshot) {
   bubbleById.clear();
   messageMeta.clear();
   downloadsByMessage.clear();
+  if (historyLoader) messagesEl.appendChild(historyLoader);
 
-  for (const msg of snapshot.messages || []) {
+  const page = snapshot.messages || [];
+  historyHasMore = Boolean(snapshot.historyHasMore);
+  oldestLoadedId = firstHistoryId(page);
+  loadingOlder = false;
+  syncHistoryLoader();
+
+  for (const msg of page) {
     if (msg.role === "system") appendSystem(msg.text);
-    else ensureBubble(msg);
+    else ensureBubble(msg, { skipScroll: true });
   }
 
-  // Attach global artifacts that appear in message text if artifactPaths missing (legacy).
-  const artifacts = snapshot.artifacts || [];
-  for (const msg of snapshot.messages || []) {
+  for (const msg of page) {
     if (msg.role !== "assistant") continue;
-    const paths = new Set(msg.artifactPaths || []);
-    for (const art of artifacts) {
-      if (msg.text && msg.text.includes(art.path)) paths.add(art.path);
-    }
-    for (const p of paths) addDownloadButton(msg.id, p);
+    for (const p of msg.artifactPaths || []) addDownloadButton(msg.id, p);
   }
 
   renderPresence(snapshot.members || []);
@@ -642,14 +728,15 @@ function applySnapshot(snapshot) {
       running: true,
       createdAt: Date.now(),
       startedBy: snapshot.busyBy?.displayName,
-    });
+    }, { skipScroll: true });
     startTurnClock(Date.now());
   }
 
-  if ((snapshot.messages || []).length === 0) {
+  if (page.length === 0) {
     appendSystem(t("ui.emptyRoom"));
   }
 
+  syncHistoryLoader();
   scrollToBottom(true);
 }
 
@@ -998,6 +1085,11 @@ function applyHistoryCleared(clearedBy) {
   bubbleById.clear();
   messageMeta.clear();
   downloadsByMessage.clear();
+  historyHasMore = false;
+  oldestLoadedId = null;
+  loadingOlder = false;
+  if (historyLoader) messagesEl.appendChild(historyLoader);
+  syncHistoryLoader();
   renderActivity([]);
   stopTurnClock();
   appendSystem(t("clear.done", { name: clearedBy || t("meta.user") }));

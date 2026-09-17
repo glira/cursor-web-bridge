@@ -74,6 +74,8 @@ const dictionaries = {
     "decision.resolvedBy": "{name} chose “{choice}”.",
     "decision.dismissed": "Resolved in Cursor.",
     "decision.failed": "Could not apply the choice in Cursor.",
+    "history.loading": "Loading older…",
+    "history.olderHint": "Scroll up for older messages",
   },
   pt: {
     "login.title": "Cursor Bridge — Login",
@@ -150,6 +152,8 @@ const dictionaries = {
     "decision.resolvedBy": "{name} escolheu “{choice}”.",
     "decision.dismissed": "Resolvido no Cursor.",
     "decision.failed": "Não foi possível aplicar a escolha no Cursor.",
+    "history.loading": "Carregando anteriores…",
+    "history.olderHint": "Role para cima para ver mensagens anteriores",
   },
 };
 

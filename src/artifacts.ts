@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
@@ -19,6 +19,8 @@ export type ArtifactRecord = {
 
 const TMP_ROOT = "/tmp";
 const PATH_RE = /(?:^|[\s`"'(=:])(\/tmp\/[A-Za-z0-9._+@%-]+(?:\/[A-Za-z0-9._+@%-]+)*)\/?/g;
+/** Basename the agent printed without the /tmp prefix, e.g. `maiva-logs-2026-09-30.zip`. */
+const BASENAME_RE = /(?:^|[\s`"'(=:])([A-Za-z0-9][A-Za-z0-9._+-]{0,180}\.[A-Za-z0-9]{1,8})/g;
 
 let artifacts = new Map<string, ArtifactRecord>();
 let loaded = false;
@@ -78,6 +80,35 @@ export function extractTmpPaths(text: string): string[] {
     }
   }
   return [...found];
+}
+
+/** Filenames mentioned in the reply. Callers check that `/tmp/<name>` exists. */
+export function extractTmpBasenameCandidates(text: string): string[] {
+  const found = new Set<string>();
+  BASENAME_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = BASENAME_RE.exec(text || "")) !== null) {
+    const name = match[1];
+    if (!name || name.includes("/") || name.includes("..")) continue;
+    found.add(`${TMP_ROOT}/${name}`);
+  }
+  return [...found];
+}
+
+/** Keep only candidates that are a real file or directory under /tmp. */
+export async function filterExistingTmpPaths(paths: string[]): Promise<string[]> {
+  const found: string[] = [];
+  for (const raw of paths) {
+    const path = normalizeRegisteredPath(raw);
+    if (!path.startsWith(`${TMP_ROOT}/`) || path.includes("..")) continue;
+    try {
+      await access(path);
+    } catch {
+      continue;
+    }
+    found.push(path);
+  }
+  return found;
 }
 
 /**

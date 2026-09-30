@@ -27,6 +27,7 @@ const cursorCwd = resolve(process.env.CURSOR_CWD || process.cwd());
 export const config = {
   rootDir,
   port: Number(process.env.PORT || 8787),
+  bindHost: process.env.BIND_HOST?.trim() || "0.0.0.0",
   bridgePassword: required("BRIDGE_PASSWORD"),
   sessionSecret: required("BRIDGE_SESSION_SECRET"),
   backend: backend as "cdp" | "sdk",

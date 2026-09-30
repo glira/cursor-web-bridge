@@ -23,7 +23,9 @@ import { storeUploadedFile } from "./uploads.js";
 import {
   createFileReadStream,
   downloadFileName,
+  extractTmpBasenameCandidates,
   extractTmpPaths,
+  filterExistingTmpPaths,
   clearArtifacts,
   listArtifacts,
   registerArtifacts,
@@ -525,7 +527,8 @@ app.post("/api/chat", requireAuth, async (c) => {
   const seenPaths = new Set<string>();
 
   const registerFromText = async (chunk: string) => {
-    const paths = extractTmpPaths(chunk);
+    const named = await filterExistingTmpPaths(extractTmpBasenameCandidates(chunk));
+    const paths = [...new Set([...extractTmpPaths(chunk), ...named])];
     const fresh = paths.filter((p) => !seenPaths.has(p));
     for (const p of fresh) seenPaths.add(p);
     if (fresh.length === 0) return;
@@ -760,18 +763,18 @@ if (config.backend === "cdp") {
 } else {
   console.log(`[bridge] cwd agent -> ${config.cursorCwd}`);
 }
-console.log(`[bridge] starting on http://127.0.0.1:${config.port}`);
-console.log(`[bridge] health: http://127.0.0.1:${config.port}/api/health`);
+console.log(`[bridge] starting on http://${config.bindHost}:${config.port}`);
+console.log(`[bridge] health: http://${config.bindHost}:${config.port}/api/health`);
 console.log(`[bridge] then: ./start-local.sh  (or: cloudflared / ngrok http ${config.port})`);
 
 const server = serve(
   {
     fetch: app.fetch,
     port: config.port,
-    hostname: "0.0.0.0",
+    hostname: config.bindHost,
   },
   () => {
-    console.log(`[bridge] listening on http://127.0.0.1:${config.port}`);
+    console.log(`[bridge] listening on http://${config.bindHost}:${config.port}`);
   },
 );
 

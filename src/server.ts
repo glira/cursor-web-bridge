@@ -523,153 +523,159 @@ app.post("/api/chat", requireAuth, async (c) => {
     at: Date.now(),
   });
 
-  let assistantText = "";
-  const seenPaths = new Set<string>();
+  const locale = localeFromContext(c);
+  const startedBy = user.displayName;
+  broadcast({
+    type: "status",
+    data: { message: `Turno iniciado por ${startedBy}`, messageId: assistantMessageId },
+    at: Date.now(),
+  });
 
-  const registerFromText = async (chunk: string) => {
-    const named = await filterExistingTmpPaths(extractTmpBasenameCandidates(chunk));
-    const paths = [...new Set([...extractTmpPaths(chunk), ...named])];
-    const fresh = paths.filter((p) => !seenPaths.has(p));
-    for (const p of fresh) seenPaths.add(p);
-    if (fresh.length === 0) return;
-    const created = await registerArtifacts(fresh);
-    if (created.length) publishArtifacts(created, { messageId: assistantMessageId });
-  };
+  // Answer now so a long turn is not cut by the proxy's idle response limit.
+  // Busy stays set until the background turn finishes.
+  void (async () => {
+    let assistantText = "";
+    const seenPaths = new Set<string>();
 
-  try {
-    broadcast({
-      type: "status",
-      data: { message: `Turno iniciado por ${user.displayName}`, messageId: assistantMessageId },
-      at: Date.now(),
-    });
-
-    const result = await runChatTurn({
-      text,
-      images,
-      attachments,
-      handlers: {
-        onText: (chunk) => {
-          assistantText += chunk;
-          broadcast({
-            type: "assistant_token",
-            data: {
-              messageId: assistantMessageId,
-              text: chunk,
-              startedAt: turnStartedAt,
-              startedBy: user.displayName,
-              running: true,
-            },
-            at: Date.now(),
-          });
-          void registerFromText(chunk);
-        },
-        onReplace: (fullText) => {
-          assistantText = fullText;
-          broadcast({
-            type: "assistant_replace",
-            data: {
-              messageId: assistantMessageId,
-              text: fullText,
-              startedAt: turnStartedAt,
-              startedBy: user.displayName,
-              running: true,
-            },
-            at: Date.now(),
-          });
-          void registerFromText(fullText);
-        },
-        onStatus: (message) => {
-          broadcast({
-            type: "status",
-            data: { message, messageId: assistantMessageId },
-            at: Date.now(),
-          });
-        },
-        onActivity: (lines) => {
-          broadcast({
-            type: "agent_activity",
-            data: {
-              lines,
-              messageId: assistantMessageId,
-              startedAt: turnStartedAt,
-              elapsedMs: Date.now() - turnStartedAt,
-            },
-            at: Date.now(),
-          });
-        },
-        onDecision: (decision) => {
-          if (decision) {
-            setPendingDecision(decision);
-          } else if (getPendingDecision()) {
-            clearPendingDecision();
-          }
-        },
-      },
-    });
-
-    await registerFromText(assistantText);
-
-    const completedAt = Date.now();
-    const artifactPaths = [...seenPaths];
-    const assistantMessage = {
-      id: assistantMessageId,
-      role: "assistant" as const,
-      text: assistantText || tApi(localeFromContext(c), "finished", { status: result.status || "ok" }),
-      createdAt: turnStartedAt,
-      completedAt,
-      durationMs: completedAt - turnStartedAt,
-      startedBy: user.displayName,
-      status: result.status || "finished",
-      artifactPaths,
+    const registerFromText = async (chunk: string) => {
+      const named = await filterExistingTmpPaths(extractTmpBasenameCandidates(chunk));
+      const paths = [...new Set([...extractTmpPaths(chunk), ...named])];
+      const fresh = paths.filter((p) => !seenPaths.has(p));
+      for (const p of fresh) seenPaths.add(p);
+      if (fresh.length === 0) return;
+      const created = await registerArtifacts(fresh);
+      if (created.length) publishArtifacts(created, { messageId: assistantMessageId });
     };
-    await appendHistory(assistantMessage);
-    broadcast({
-      type: "assistant_done",
-      data: {
-        message: assistantMessage,
-        result,
-      },
-      at: Date.now(),
-    });
 
-    return c.json({ ok: true, messageId: assistantMessageId, result });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : tApi(localeFromContext(c), "unknown_error");
-    const completedAt = Date.now();
-    if (assistantText.trim() || seenPaths.size > 0) {
-      const partial = {
+    try {
+      const result = await runChatTurn({
+        text,
+        images,
+        attachments,
+        handlers: {
+          onText: (chunk) => {
+            assistantText += chunk;
+            broadcast({
+              type: "assistant_token",
+              data: {
+                messageId: assistantMessageId,
+                text: chunk,
+                startedAt: turnStartedAt,
+                startedBy,
+                running: true,
+              },
+              at: Date.now(),
+            });
+            void registerFromText(chunk);
+          },
+          onReplace: (fullText) => {
+            assistantText = fullText;
+            broadcast({
+              type: "assistant_replace",
+              data: {
+                messageId: assistantMessageId,
+                text: fullText,
+                startedAt: turnStartedAt,
+                startedBy,
+                running: true,
+              },
+              at: Date.now(),
+            });
+            void registerFromText(fullText);
+          },
+          onStatus: (message) => {
+            broadcast({
+              type: "status",
+              data: { message, messageId: assistantMessageId },
+              at: Date.now(),
+            });
+          },
+          onActivity: (lines) => {
+            broadcast({
+              type: "agent_activity",
+              data: {
+                lines,
+                messageId: assistantMessageId,
+                startedAt: turnStartedAt,
+                elapsedMs: Date.now() - turnStartedAt,
+              },
+              at: Date.now(),
+            });
+          },
+          onDecision: (decision) => {
+            if (decision) {
+              setPendingDecision(decision);
+            } else if (getPendingDecision()) {
+              clearPendingDecision();
+            }
+          },
+        },
+      });
+
+      await registerFromText(assistantText);
+
+      const completedAt = Date.now();
+      const artifactPaths = [...seenPaths];
+      const assistantMessage = {
         id: assistantMessageId,
         role: "assistant" as const,
-        text: assistantText || tApi(localeFromContext(c), "error_wrap", { message }),
+        text: assistantText || tApi(locale, "finished", { status: result.status || "ok" }),
         createdAt: turnStartedAt,
         completedAt,
         durationMs: completedAt - turnStartedAt,
-        startedBy: user.displayName,
-        status: "error",
-        artifactPaths: [...seenPaths],
+        startedBy,
+        status: result.status || "finished",
+        artifactPaths,
       };
-      await appendHistory(partial);
+      await appendHistory(assistantMessage);
       broadcast({
         type: "assistant_done",
-        data: { message: partial, result: { status: "error" } },
+        data: {
+          message: assistantMessage,
+          result,
+        },
         at: Date.now(),
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : tApi(locale, "unknown_error");
+      const completedAt = Date.now();
+      if (assistantText.trim() || seenPaths.size > 0) {
+        const partial = {
+          id: assistantMessageId,
+          role: "assistant" as const,
+          text: assistantText || tApi(locale, "error_wrap", { message }),
+          createdAt: turnStartedAt,
+          completedAt,
+          durationMs: completedAt - turnStartedAt,
+          startedBy,
+          status: "error",
+          artifactPaths: [...seenPaths],
+        };
+        await appendHistory(partial);
+        broadcast({
+          type: "assistant_done",
+          data: { message: partial, result: { status: "error" } },
+          at: Date.now(),
+        });
+      }
+      broadcast({
+        type: "room_error",
+        data: { error: message, messageId: assistantMessageId },
+        at: Date.now(),
+      });
+      console.error(`[chat] turn failed messageId=${assistantMessageId}`, message);
+    } finally {
+      setStreamingMessageId(null);
+      if (!getPendingDecision()) {
+        setRoomBusy(null);
+      }
+      console.log(
+        `[chat] turn end messageId=${assistantMessageId} by=${startedBy} pendingDecision=${Boolean(getPendingDecision())}`,
+      );
     }
-    broadcast({
-      type: "room_error",
-      data: { error: message, messageId: assistantMessageId },
-      at: Date.now(),
-    });
-    return c.json({ error: message }, 500);
-  } finally {
-    setStreamingMessageId(null);
-    if (!getPendingDecision()) {
-      setRoomBusy(null);
-    }
-    console.log(
-      `[chat] turn end messageId=${assistantMessageId} by=${user.displayName} pendingDecision=${Boolean(getPendingDecision())}`,
-    );
-  }
+  })();
+
+  return c.json({ ok: true, messageId: assistantMessageId });
 });
 
 app.post("/api/decision", requireAuth, async (c) => {

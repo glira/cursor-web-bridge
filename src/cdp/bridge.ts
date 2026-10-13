@@ -12,8 +12,15 @@ const CHAT_INPUT_SELECTORS = [
 
 /** How many unchanged polls before we even start the post-idle grace window. */
 const STABLE_TICKS_REQUIRED = 15;
-/** Keep watching after seeming idle in case a final answer still arrives. */
+/** Quiet gap before finish when the Stop button was never seen. */
 const IDLE_GRACE_MS = 25_000;
+/** Longer quiet gap after Stop was seen, so a pause between tools does not end the turn. */
+const IDLE_GRACE_AFTER_GENERATING_MS = 90_000;
+
+function activitySignature(lines: string[]): string {
+  if (lines.length === 0) return "";
+  return `${lines.length}\n${lines[lines.length - 1]}`;
+}
 
 type CdpTarget = {
   id: string;
@@ -491,6 +498,7 @@ export async function runCdpChatTurn(opts: {
     let sawLiveWorking = false;
     let sawActivityHist = false;
     let idleSince: number | null = null;
+    let activitySig = "";
     let lastDiagAt = 0;
     let stillWorkingAtEnd = false;
     const activityPrev = { value: "" };
@@ -538,6 +546,10 @@ export async function runCdpChatTurn(opts: {
         );
       }
 
+      const nextActivitySig = activitySignature(snap.activityLines);
+      const activityAdvanced = nextActivitySig !== "" && nextActivitySig !== activitySig;
+      if (nextActivitySig !== "") activitySig = nextActivitySig;
+
       if (candidate && candidate !== lastAssistant) {
         if (candidate.startsWith(lastAssistant)) {
           const delta = candidate.slice(lastAssistant.length);
@@ -554,11 +566,11 @@ export async function runCdpChatTurn(opts: {
         lastAssistant = candidate;
         stableTicks = 0;
         idleSince = null;
-      } else if (!stillWorking) {
-        stableTicks += 1;
-      } else {
+      } else if (stillWorking || activityAdvanced) {
         stableTicks = 0;
         idleSince = null;
+      } else {
+        stableTicks += 1;
       }
 
       if (stillWorking) {
@@ -566,6 +578,7 @@ export async function runCdpChatTurn(opts: {
         continue;
       }
 
+      const graceMs = sawGenerating ? IDLE_GRACE_AFTER_GENERATING_MS : IDLE_GRACE_MS;
       const readyToGrace =
         lastAssistant.length > 0 &&
         stableTicks >= STABLE_TICKS_REQUIRED &&
@@ -575,10 +588,10 @@ export async function runCdpChatTurn(opts: {
         if (idleSince === null) {
           idleSince = Date.now();
           console.log(
-            `[cdp] idle candidate len=${lastAssistant.length} starting grace ${IDLE_GRACE_MS}ms`,
+            `[cdp] idle candidate len=${lastAssistant.length} starting grace ${graceMs}ms`,
           );
           opts.handlers.onActivity?.(["Aguardando resposta final…"]);
-        } else if (Date.now() - idleSince >= IDLE_GRACE_MS) {
+        } else if (Date.now() - idleSince >= graceMs) {
           endReason = "stable+grace";
           break;
         }

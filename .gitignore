@@ -6,3 +6,4 @@ uploads/*
 !uploads/.gitkeep
 *.log
 .DS_Store
+comando_para_ligar_acesso_vnc

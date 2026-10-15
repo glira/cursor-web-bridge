@@ -64,7 +64,10 @@ function decisionIsApprovalLabel(label) {
   if (/accepted out of|acceptance rate|shell command|stop command|show full|plan progress|extra high/i.test(label)) {
     return false;
   }
-  return /^(Allow(?: and remember)?|Allowlist|Add to allowlist|Always(?: allow)?|Once|Allow once|Run(?: command)?|Skip|Reject|Deny|Permitir(?: e lembrar)?|Lista de permiss(?:ões|oes)?|Adicionar à lista|Executar|Recusar|Pular|Sempre(?: permitir)?|Uma vez)(?:\\b|[.…]*$)/i.test(label);
+  // File chips ("run-foo.sh Ln 1–18") are buttons. A word boundary after
+  // "Run" matches the hyphen, so the label has to be the phrase itself.
+  if (/\\.(?:sh|js|ts|tsx|py|md)\\b|\\bLn\\s*\\d/i.test(label)) return false;
+  return /^(Allow(?: and remember)?|Allowlist|Add to allowlist|Always(?: allow)?|Once|Allow once|Run(?: command)?|Skip|Reject|Deny|Permitir(?: e lembrar)?|Lista de permiss(?:ões|oes)?|Adicionar à lista|Executar|Recusar|Pular|Sempre(?: permitir)?|Uma vez)[.…\\s]*$/i.test(label);
 }
 
 function decisionIsWaitingText(text) {

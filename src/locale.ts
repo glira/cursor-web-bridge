@@ -38,6 +38,23 @@ const messages: Record<UiLocale, Record<string, string>> = {
     decision_click_failed: "Could not click the option in Cursor.",
     decision_sdk_unsupported:
       "Team decisions are only available in CDP mode. SDK mode auto-runs tools.",
+    invalid_login: "Invalid username or password",
+    forbidden: "You do not have permission to do that.",
+    room_unknown: "That tab does not exist.",
+    room_not_ready: "That tab is not ready yet.",
+    room_fixed: "The general tab cannot be removed.",
+    user_exists: "That username is already in use.",
+    user_invalid: "Invalid username.",
+    user_missing: "User not found.",
+    password_short: "Password must be at least 8 characters.",
+    cannot_delete_self: "You cannot delete your own user.",
+    cannot_delete_last_admin: "The last admin cannot be deleted.",
+    workspace_blocked: "Not enough disk or memory for another tab.",
+    workspace_warn: "Resources are tight. Confirm to create the tab anyway.",
+    workspace_dirty: "The tab has uncommitted changes.",
+    workspace_title_invalid: "Invalid tab name.",
+    workspace_path: "Could not choose a folder for that tab.",
+    workspace_failed: "Could not create the tab.",
   },
   pt: {
     too_many_attempts: "Muitas tentativas. Aguarde e tente de novo.",
@@ -74,6 +91,23 @@ const messages: Record<UiLocale, Record<string, string>> = {
     decision_click_failed: "Não foi possível clicar na opção no Cursor.",
     decision_sdk_unsupported:
       "Decisões do time só existem no modo CDP. O modo SDK executa as ferramentas sozinho.",
+    invalid_login: "Usuário ou senha inválidos",
+    forbidden: "Você não tem permissão para isso.",
+    room_unknown: "Essa aba não existe.",
+    room_not_ready: "Essa aba ainda não está pronta.",
+    room_fixed: "A aba Geral não pode ser removida.",
+    user_exists: "Esse usuário já existe.",
+    user_invalid: "Usuário inválido.",
+    user_missing: "Usuário não encontrado.",
+    password_short: "A senha precisa ter pelo menos 8 caracteres.",
+    cannot_delete_self: "Você não pode apagar o próprio usuário.",
+    cannot_delete_last_admin: "O último admin não pode ser apagado.",
+    workspace_blocked: "Sem disco ou memória para mais uma aba.",
+    workspace_warn: "Os recursos estão apertados. Confirme para criar mesmo assim.",
+    workspace_dirty: "A aba tem alterações sem commit.",
+    workspace_title_invalid: "Nome de aba inválido.",
+    workspace_path: "Não foi possível escolher a pasta dessa aba.",
+    workspace_failed: "Não foi possível criar a aba.",
   },
 };
 
@@ -114,7 +148,7 @@ export function tApi(
 export function apiError(
   c: Context,
   key: string,
-  status: 400 | 401 | 404 | 409 | 429 | 500,
+  status: 400 | 401 | 403 | 404 | 409 | 429 | 500,
   vars: Record<string, string> = {},
 ) {
   return c.json({ error: tApi(localeFromContext(c), key, vars) }, status);

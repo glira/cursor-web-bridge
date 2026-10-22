@@ -88,13 +88,8 @@ export async function runChatTurn(opts: {
   images: ChatImage[];
   attachments: ChatAttachmentMeta[];
   handlers: StreamHandlers;
+  target?: string;
 }): Promise<{ agentId: string; runId: string; status: string }> {
-  if (agentBusy) {
-    throw new Error("A reply is already in progress. Wait for it to finish.");
-  }
-
-  agentBusy = true;
-  try {
     if (config.backend === "cdp") {
       const prompt = buildPrompt(opts.text, opts.attachments);
       if (!prompt.trim()) {
@@ -103,9 +98,19 @@ export async function runChatTurn(opts: {
       if (opts.images.length > 0) {
         opts.handlers.onStatus("cdp: images ignored in this mode");
       }
-      return await runCdpChatTurn({ text: prompt, handlers: opts.handlers });
+      return await runCdpChatTurn({
+        text: prompt,
+        target: opts.target,
+        handlers: opts.handlers,
+      });
     }
 
+    if (agentBusy) {
+      throw new Error("A reply is already in progress. Wait for it to finish.");
+    }
+
+    agentBusy = true;
+    try {
     const agent = await ensureAgent();
     const prompt = buildPrompt(opts.text, opts.attachments);
     if (!prompt.trim() && opts.images.length === 0) {

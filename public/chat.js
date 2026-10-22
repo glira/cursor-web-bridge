@@ -1,5 +1,5 @@
 import { createRoomRtc } from "./rtc.js";
-import { t, applyI18n } from "./i18n.js?v=6";
+import { t, applyI18n } from "./i18n.js?v=7";
 
 applyI18n();
 
@@ -40,6 +40,9 @@ const liveCamBtn = document.getElementById("live-cam");
 const liveTiles = document.getElementById("live-tiles");
 const liveStatus = document.getElementById("live-status");
 const liveRoster = document.getElementById("live-roster");
+const roomTabs = document.getElementById("room-tabs");
+const adminOpenBtn = document.getElementById("admin-open");
+const adminDialog = document.getElementById("admin-dialog");
 
 /** @type {File[]} */
 let pendingFiles = [];
@@ -47,6 +50,14 @@ let pendingFiles = [];
 let myClientId = null;
 /** @type {string | null} */
 let myDisplayName = null;
+let myRole = "member";
+let currentRoom = localStorage.getItem("bridgeRoom") || "geral";
+/** @type {{ id: string, title: string, status: string, statusError?: string, busy?: boolean, busyBy?: { displayName?: string } | null, removable?: boolean, sharedDeps?: boolean }[]} */
+let rooms = [];
+/** @type {EventSource | null} */
+let roomEvents = null;
+/** @type {EventSource | null} */
+let statusEvents = null;
 let roomBusy = false;
 /** @type {Map<string, HTMLElement>} */
 const bubbleById = new Map();
@@ -76,6 +87,10 @@ let loadingOlder = false;
 
 const PIN_THRESHOLD_PX = 80;
 const HISTORY_TOP_PX = 80;
+
+function roomQuery() {
+  return `room=${encodeURIComponent(currentRoom)}`;
+}
 
 function updateLiveControls() {
   const on = rtc.isInLive();
@@ -211,7 +226,7 @@ async function loadOlderHistory() {
   const prevTop = messagesEl.scrollTop;
   try {
     const res = await fetch(
-      `/api/history?before=${encodeURIComponent(oldestLoadedId)}&limit=40`,
+      `/api/history?before=${encodeURIComponent(oldestLoadedId)}&limit=40&${roomQuery()}`,
     );
     if (res.status === 401) {
       location.href = "/";
@@ -341,7 +356,7 @@ function addDownloadButton(messageId, path, kind = "file") {
 
   const a = document.createElement("a");
   a.className = "artifact-dl";
-  a.href = `/api/artifacts/download?path=${encodeURIComponent(path)}`;
+  a.href = `/api/artifacts/download?path=${encodeURIComponent(path)}&${roomQuery()}`;
   a.setAttribute("download", "");
   const label = document.createElement("span");
   label.textContent =
@@ -629,7 +644,7 @@ async function submitDecision(optionId) {
     btn.disabled = true;
   }
   try {
-    const res = await fetch("/api/decision", {
+    const res = await fetch(`/api/decision?${roomQuery()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ optionId }),
@@ -742,7 +757,7 @@ function applySnapshot(snapshot) {
 
 async function publishDraft(text) {
   try {
-    await fetch("/api/draft", {
+    await fetch(`/api/draft?${roomQuery()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -761,7 +776,12 @@ function scheduleDraftPublish() {
 }
 
 function connectEvents() {
-  const es = new EventSource("/api/events");
+  if (roomEvents) {
+    roomEvents.close();
+    roomEvents = null;
+  }
+  const es = new EventSource(`/api/events?${roomQuery()}`);
+  roomEvents = es;
 
   es.addEventListener("snapshot", (ev) => {
     try {
@@ -1057,7 +1077,7 @@ deleteMessageConfirm.addEventListener("click", async () => {
   deleteMessageError.hidden = true;
   deleteMessageConfirm.disabled = true;
   try {
-    const res = await fetch("/api/history/delete", {
+    const res = await fetch(`/api/history/delete?${roomQuery()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
@@ -1124,7 +1144,7 @@ clearHistoryConfirm.addEventListener("click", async () => {
   clearHistoryError.hidden = true;
   clearHistoryConfirm.disabled = true;
   try {
-    const res = await fetch("/api/history/clear", { method: "POST" });
+    const res = await fetch(`/api/history/clear?${roomQuery()}`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
       location.href = "/";
@@ -1153,7 +1173,7 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 async function ensureAuth() {
-  const res = await fetch("/api/me");
+  const res = await fetch(`/api/me?${roomQuery()}`);
   const data = await res.json();
   if (!data.authenticated) {
     location.href = "/";
@@ -1161,17 +1181,263 @@ async function ensureAuth() {
   }
   myClientId = data.clientId;
   myDisplayName = data.displayName;
+  myRole = data.role || "member";
+  rooms = Array.isArray(data.rooms) ? data.rooms : [];
+  if (!rooms.some((room) => room.id === currentRoom)) currentRoom = "geral";
   meLabel.textContent = data.displayName
     ? t("chat.meRoom", { name: data.displayName })
     : t("chat.sharedRoom");
+  adminOpenBtn.hidden = myRole !== "admin";
+  if (livePanel) livePanel.hidden = currentRoom !== "geral";
+  renderTabs();
   setBusy(data.busy, data.busyBy, "/api/me");
   renderDecision(data.pendingDecision || null);
   return data;
 }
 
+function renderTabs() {
+  roomTabs.replaceChildren();
+  for (const room of rooms) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "room-tab" + (room.id === currentRoom ? " active" : "");
+    btn.disabled = room.status !== "ready" && room.id !== currentRoom;
+    const label = document.createElement("span");
+    label.textContent = room.title || room.id;
+    btn.appendChild(label);
+    if (room.busy) {
+      const dot = document.createElement("span");
+      dot.className = "room-tab-busy";
+      dot.title = room.busyBy?.displayName ? t("ui.replyingBy", { name: room.busyBy.displayName }) : t("ui.replying");
+      btn.appendChild(dot);
+    }
+    if (room.status === "creating") {
+      const note = document.createElement("span");
+      note.className = "muted";
+      note.textContent = t("admin.creating");
+      btn.appendChild(note);
+    }
+    if (room.status === "error") {
+      btn.title = room.statusError || t("admin.tabFailed");
+    }
+    btn.addEventListener("click", () => {
+      if (room.status !== "ready") return;
+      void switchRoom(room.id);
+    });
+    roomTabs.appendChild(btn);
+  }
+}
+
+async function switchRoom(roomId) {
+  if (roomId === currentRoom) return;
+  if (currentRoom === "geral" && roomId !== "geral") {
+    try {
+      await rtc.leave();
+    } catch {
+      /* ignore */
+    }
+  }
+  currentRoom = roomId;
+  localStorage.setItem("bridgeRoom", roomId);
+  if (livePanel) livePanel.hidden = currentRoom !== "geral";
+  hideDecisionCard();
+  renderActivity([]);
+  stopTurnClock();
+  messagesEl.innerHTML = "";
+  bubbleById.clear();
+  messageMeta.clear();
+  downloadsByMessage.clear();
+  if (historyLoader) messagesEl.appendChild(historyLoader);
+  renderTabs();
+  connectEvents();
+}
+
+function connectStatus() {
+  if (statusEvents) statusEvents.close();
+  statusEvents = new EventSource("/api/rooms/events");
+  statusEvents.addEventListener("rooms_status", (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      const busyById = new Map((data.rooms || []).map((room) => [room.id, room]));
+      rooms = rooms.map((room) => {
+        const live = busyById.get(room.id);
+        return live ? { ...room, busy: live.busy, busyBy: live.busyBy } : room;
+      });
+      renderTabs();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+function adminError(message) {
+  const el = document.getElementById("admin-error");
+  el.hidden = !message;
+  el.textContent = message || "";
+}
+
+async function refreshAdmin() {
+  adminError("");
+  const [usersRes, meRes, capRes] = await Promise.all([
+    fetch("/api/admin/users"),
+    fetch("/api/me"),
+    fetch("/api/admin/capacity"),
+  ]);
+  if (usersRes.status === 401 || meRes.status === 401) {
+    location.href = "/";
+    return;
+  }
+  const usersData = await usersRes.json().catch(() => ({}));
+  const meData = await meRes.json().catch(() => ({}));
+  const capData = await capRes.json().catch(() => ({}));
+  rooms = Array.isArray(meData.rooms) ? meData.rooms : rooms;
+  renderTabs();
+
+  const cap = capData.own || {};
+  const shared = capData.shared || {};
+  document.getElementById("admin-capacity").textContent = t("admin.capacity", {
+    mem: String(cap.memAvailableMb ?? "-"),
+    disk: String(cap.diskFreeMb ?? "-"),
+    swap: String(cap.swapFreeMb ?? "-"),
+    own: cap.level || "-",
+    shared: shared.level || "-",
+  });
+
+  const userList = document.getElementById("admin-users");
+  userList.replaceChildren();
+  for (const user of usersData.users || []) {
+    const li = document.createElement("li");
+    li.textContent = `${user.displayName} (${user.username}) · ${user.role}`;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ghost";
+    del.textContent = t("delete.button");
+    del.addEventListener("click", async () => {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        adminError(data.error || t("admin.failed"));
+        return;
+      }
+      await refreshAdmin();
+    });
+    li.appendChild(del);
+    userList.appendChild(li);
+  }
+
+  const roomList = document.getElementById("admin-rooms");
+  roomList.replaceChildren();
+  for (const room of rooms) {
+    const li = document.createElement("li");
+    li.textContent = `${room.title} · ${room.status}${room.statusError ? ` (${room.statusError})` : ""}`;
+    if (room.removable) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ghost";
+      del.textContent = t("delete.button");
+      del.addEventListener("click", async () => {
+        const res = await fetch(`/api/admin/rooms/${encodeURIComponent(room.id)}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force: false, keepFolder: false }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 409 && data.detail) {
+          const ok = window.confirm(`${data.error}\n\n${data.detail}`);
+          if (!ok) return;
+          const forced = await fetch(`/api/admin/rooms/${encodeURIComponent(room.id)}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ force: true, keepFolder: false }),
+          });
+          if (!forced.ok) {
+            const again = await forced.json().catch(() => ({}));
+            adminError(again.error || t("admin.failed"));
+            return;
+          }
+        } else if (!res.ok) {
+          adminError(data.error || t("admin.failed"));
+          return;
+        }
+        if (currentRoom === room.id) currentRoom = "geral";
+        await refreshAdmin();
+        connectEvents();
+      });
+      li.appendChild(del);
+    }
+    roomList.appendChild(li);
+  }
+}
+
+adminOpenBtn.addEventListener("click", () => {
+  adminDialog.showModal();
+  void refreshAdmin();
+});
+document.getElementById("admin-close").addEventListener("click", () => adminDialog.close());
+adminDialog.addEventListener("click", (ev) => {
+  if (ev.target === adminDialog) adminDialog.close();
+});
+
+document.getElementById("admin-user-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  adminError("");
+  const res = await fetch("/api/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: document.getElementById("admin-username").value,
+      displayName: document.getElementById("admin-displayname").value,
+      password: document.getElementById("admin-password").value,
+      role: document.getElementById("admin-role").value,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    adminError(data.error || t("admin.failed"));
+    return;
+  }
+  ev.target.reset();
+  await refreshAdmin();
+});
+
+document.getElementById("admin-room-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  adminError("");
+  const payload = {
+    title: document.getElementById("admin-room-title").value,
+    sharedDeps: document.getElementById("admin-shared-deps").checked,
+    force: false,
+  };
+  let res = await fetch("/api/admin/rooms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let data = await res.json().catch(() => ({}));
+  if (res.status === 409 && data.capacity && data.capacity.level === "warn") {
+    const ok = window.confirm(`${data.error}\n${data.capacity.reason || ""}`);
+    if (!ok) return;
+    payload.force = true;
+    res = await fetch("/api/admin/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    data = await res.json().catch(() => ({}));
+  }
+  if (!res.ok) {
+    const reason = data.capacity?.reason ? ` ${data.capacity.reason}` : "";
+    adminError((data.error || t("admin.failed")) + reason);
+    return;
+  }
+  ev.target.reset();
+  await refreshAdmin();
+});
+
 async function sendMessage(text, files) {
   const formData = new FormData();
   formData.append("text", text);
+  formData.append("room", currentRoom);
   for (const file of files) {
     formData.append("files", file, file.name);
   }
@@ -1218,7 +1484,7 @@ form.addEventListener("submit", async (e) => {
     appendSystem(err instanceof Error ? err.message : t("ui.sendFailed"));
   } finally {
     try {
-      const res = await fetch("/api/me");
+      const res = await fetch(`/api/me?${roomQuery()}`);
       const data = await res.json();
       if (data.authenticated) {
         setBusy(data.busy, data.busyBy, "post-submit-/api/me");
@@ -1235,6 +1501,7 @@ form.addEventListener("submit", async (e) => {
 await ensureAuth();
 updateLiveControls();
 connectEvents();
+connectStatus();
 window.addEventListener("beforeunload", () => {
   if (rtc.isInLive()) {
     void fetch("/api/rtc/leave", { method: "POST", keepalive: true, credentials: "same-origin" });

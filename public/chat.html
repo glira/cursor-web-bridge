@@ -16,12 +16,15 @@
         <span id="typing-label" class="status-pill typing-pill" hidden></span>
         <span id="busy-label" class="status-pill" hidden></span>
         <span id="presence-label" class="muted presence" data-i18n-title="chat.presenceTitle" title="Who is online"></span>
+        <button id="admin-open" type="button" class="ghost" hidden data-i18n="admin.open">Admin</button>
         <button id="clear-history" type="button" class="ghost" data-i18n="clear.button">
           Clear history
         </button>
         <button id="logout" type="button" class="ghost" data-i18n="chat.logout">Log out</button>
       </div>
     </header>
+
+    <nav id="room-tabs" class="room-tabs" aria-label="Tabs"></nav>
 
     <div class="chat-layout">
       <div class="chat-column">
@@ -117,6 +120,41 @@
       </div>
     </dialog>
 
-    <script src="/chat.js?v=6" type="module"></script>
+    <dialog id="admin-dialog" class="modal">
+      <div class="modal-card admin-card">
+        <h2 data-i18n="admin.title">Users and tabs</h2>
+        <p id="admin-capacity" class="muted"></p>
+        <p id="admin-error" class="error" hidden></p>
+
+        <h3 data-i18n="admin.users">Users</h3>
+        <ul id="admin-users" class="admin-list"></ul>
+        <form id="admin-user-form" class="admin-form">
+          <input id="admin-username" required maxlength="32" placeholder="username" autocomplete="off" />
+          <input id="admin-displayname" required maxlength="40" data-i18n-placeholder="admin.displayName" placeholder="Display name" />
+          <input id="admin-password" required minlength="8" type="password" data-i18n-placeholder="admin.password" placeholder="Password" />
+          <select id="admin-role">
+            <option value="member" data-i18n="admin.member">Member</option>
+            <option value="admin" data-i18n="admin.admin">Admin</option>
+          </select>
+          <button type="submit" data-i18n="admin.addUser">Add user</button>
+        </form>
+
+        <h3 data-i18n="admin.tabs">Tabs</h3>
+        <ul id="admin-rooms" class="admin-list"></ul>
+        <form id="admin-room-form" class="admin-form">
+          <input id="admin-room-title" required maxlength="40" data-i18n-placeholder="admin.tabName" placeholder="Tab name" />
+          <label class="admin-check">
+            <input id="admin-shared-deps" type="checkbox" />
+            <span data-i18n="admin.sharedDeps">Share dependencies with the general tab</span>
+          </label>
+          <button type="submit" data-i18n="admin.addTab">Create tab</button>
+        </form>
+        <div class="modal-actions">
+          <button id="admin-close" type="button" class="ghost" data-i18n="admin.close">Close</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="/chat.js?v=7" type="module"></script>
   </body>
 </html>

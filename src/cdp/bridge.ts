@@ -47,8 +47,18 @@ type ClickWaiter = {
   resolve: (result: ClickDecisionResult) => void;
 };
 
-let clickWaiter: ClickWaiter | null = null;
-let cdpTurnActive = false;
+type TurnSlot = { active: boolean; waiter: ClickWaiter | null };
+
+const turnSlots = new Map<string, TurnSlot>();
+
+function turnSlot(key: string): TurnSlot {
+  let slot = turnSlots.get(key);
+  if (!slot) {
+    slot = { active: false, waiter: null };
+    turnSlots.set(key, slot);
+  }
+  return slot;
+}
 
 function decisionKey(decision: PendingDecision | null): string {
   if (!decision) return "";
@@ -83,9 +93,15 @@ function listWorkbenchPages(targets: CdpTarget[]): CdpTarget[] {
   );
 }
 
-function titleMatchesTarget(title: string | undefined, needle: string): boolean {
-  if (!needle) return false;
-  return (title || "").toLowerCase().includes(needle.toLowerCase());
+function titleHasFolder(title: string | undefined, folderName: string): boolean {
+  if (!folderName) return false;
+  const want = folderName.toLowerCase();
+  const parts = (title || "")
+    .toLowerCase()
+    .split(/\s+-\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.includes(want);
 }
 
 async function readWorkspaceHint(client: CdpClient): Promise<string> {
@@ -96,25 +112,28 @@ async function readWorkspaceHint(client: CdpClient): Promise<string> {
   }
 }
 
-async function pickWorkbenchTarget(targets: CdpTarget[]): Promise<{
+async function pickWorkbenchTarget(
+  targets: CdpTarget[],
+  needle: string,
+): Promise<{
   target: CdpTarget;
   windows: Array<{ title?: string; id: string; matched: boolean }>;
   matchMode: "title" | "fallback";
 }> {
   const workbench = listWorkbenchPages(targets);
   const pages = targets.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);
-  const needle = config.cursorCdpTarget;
-  const cwdHint = config.cursorCwd.toLowerCase();
+  const needleName = needle || config.cursorCdpTarget;
+  const cwdHint = basenameHint(config.cursorCwd);
 
   const windows = (workbench.length ? workbench : pages).map((t) => ({
     title: t.title,
     id: t.id,
-    matched: titleMatchesTarget(t.title, needle) || titleMatchesTarget(t.title, basenameHint(cwdHint)),
+    matched: titleHasFolder(t.title, needleName) || titleHasFolder(t.title, cwdHint),
   }));
 
   const byTitle =
-    workbench.find((t) => titleMatchesTarget(t.title, needle)) ||
-    workbench.find((t) => titleMatchesTarget(t.title, basenameHint(cwdHint)));
+    workbench.find((t) => titleHasFolder(t.title, needleName)) ||
+    workbench.find((t) => titleHasFolder(t.title, cwdHint));
 
   if (byTitle) {
     return { target: byTitle, windows, matchMode: "title" };
@@ -126,7 +145,7 @@ async function pickWorkbenchTarget(targets: CdpTarget[]): Promise<{
       await client.connect(candidate.webSocketDebuggerUrl!);
       await client.send("Runtime.enable");
       const hint = (await readWorkspaceHint(client)).toLowerCase();
-      if (hint.includes(needle) || hint.includes(basenameHint(cwdHint))) {
+      if (titleHasFolder(hint, needleName) || titleHasFolder(hint, cwdHint)) {
         client.disconnect();
         return {
           target: candidate,
@@ -150,10 +169,10 @@ async function pickWorkbenchTarget(targets: CdpTarget[]): Promise<{
     );
   }
 
-  if (needle && workbench.length > 0) {
+  if (needleName && workbench.length > 0) {
     const open = windows.map((w) => w.title || w.id).join(" | ");
     throw new Error(
-      `Project window "${needle}" was not found on CDP. ` +
+      `Project window "${needleName}" was not found on CDP. ` +
         `Open the project folder in a Cursor window (File → New Window → Open Folder). ` +
         `Windows now: ${open || "(none)"}`,
     );
@@ -167,14 +186,14 @@ function basenameHint(cwd: string): string {
   return (parts[parts.length - 1] || "").toLowerCase();
 }
 
-async function connectToWorkbench(): Promise<{
+async function connectToWorkbench(needle = config.cursorCdpTarget): Promise<{
   client: CdpClient;
   target: CdpTarget;
   windows: Array<{ title?: string; id: string; matched: boolean }>;
   matchMode: "title" | "fallback";
 }> {
   const targets = await listTargets(config.cursorCdpUrl);
-  const picked = await pickWorkbenchTarget(targets);
+  const picked = await pickWorkbenchTarget(targets, needle);
   const client = new CdpClient();
   await client.connect(picked.target.webSocketDebuggerUrl!);
   await client.send("Runtime.enable");
@@ -306,20 +325,24 @@ async function clickDecisionOnClient(
   return result;
 }
 
-export async function clickDecision(optionId: string): Promise<ClickDecisionResult> {
+export async function clickDecision(
+  optionId: string,
+  needle = config.cursorCdpTarget,
+): Promise<ClickDecisionResult> {
   const id = optionId.trim();
   if (!id) return { ok: false, error: "unknown-option" };
+  const slot = turnSlot(needle);
 
-  if (cdpTurnActive) {
+  if (slot.active) {
     return new Promise((resolve) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        if (clickWaiter?.optionId === id) clickWaiter = null;
+        if (slot.waiter?.optionId === id) slot.waiter = null;
         resolve({ ok: false, error: "click-timeout" });
       }, 20_000);
-      clickWaiter = {
+      slot.waiter = {
         optionId: id,
         resolve: (result) => {
           if (settled) return;
@@ -331,7 +354,7 @@ export async function clickDecision(optionId: string): Promise<ClickDecisionResu
     });
   }
 
-  const { client } = await connectToWorkbench();
+  const { client } = await connectToWorkbench(needle);
   try {
     return await clickDecisionOnClient(client, id);
   } finally {
@@ -339,10 +362,11 @@ export async function clickDecision(optionId: string): Promise<ClickDecisionResu
   }
 }
 
-async function flushClickWaiter(client: CdpClient): Promise<void> {
-  if (!clickWaiter) return;
-  const req = clickWaiter;
-  clickWaiter = null;
+async function flushClickWaiter(client: CdpClient, needle: string): Promise<void> {
+  const slot = turnSlot(needle);
+  if (!slot.waiter) return;
+  const req = slot.waiter;
+  slot.waiter = null;
   try {
     const result = await clickDecisionOnClient(client, req.optionId);
     console.log(`[cdp] clickDecision option=${req.optionId} ok=${result.ok} ${result.error || result.label || ""}`);
@@ -453,7 +477,7 @@ export async function checkCdpHealth(): Promise<{
       windows = listWorkbenchPages(targets).map((t) => ({
         title: t.title,
         id: t.id,
-        matched: titleMatchesTarget(t.title, config.cursorCdpTarget),
+        matched: titleHasFolder(t.title, config.cursorCdpTarget),
       }));
     } catch {
       // ignore
@@ -470,14 +494,17 @@ export async function checkCdpHealth(): Promise<{
 
 export async function runCdpChatTurn(opts: {
   text: string;
+  target?: string;
   handlers: StreamHandlers;
 }): Promise<{ agentId: string; runId: string; status: string }> {
   const prompt = opts.text.trim();
   if (!prompt) throw new Error("Send text for CDP mode (CDP attachments are not supported yet).");
 
-  const { client, target } = await connectToWorkbench();
-  opts.handlers.onStatus(`cdp=${target.title || target.id} (want=${config.cursorCdpTarget})`);
-  cdpTurnActive = true;
+  const needle = opts.target || config.cursorCdpTarget;
+  const slot = turnSlot(needle);
+  const { client, target } = await connectToWorkbench(needle);
+  opts.handlers.onStatus(`cdp=${target.title || target.id} (want=${needle})`);
+  slot.active = true;
 
   try {
     const before = await snapshotChat(client);
@@ -510,7 +537,7 @@ export async function runCdpChatTurn(opts: {
     let endReason = "timeout";
 
     while (Date.now() < deadline) {
-      await flushClickWaiter(client);
+      await flushClickWaiter(client, needle);
       const snap = await snapshotChat(client);
       if (snap.generating) sawGenerating = true;
       if (snap.liveWorking) sawLiveWorking = true;
@@ -630,11 +657,64 @@ export async function runCdpChatTurn(opts: {
       status,
     };
   } finally {
-    if (clickWaiter) {
-      clickWaiter.resolve({ ok: false, error: "turn-ended" });
-      clickWaiter = null;
+    if (slot.waiter) {
+      slot.waiter.resolve({ ok: false, error: "turn-ended" });
+      slot.waiter = null;
     }
-    cdpTurnActive = false;
+    slot.active = false;
     client.disconnect();
   }
+}
+
+export async function cursorWindowOpen(needle: string): Promise<boolean> {
+  const targets = await listTargets(config.cursorCdpUrl);
+  return listWorkbenchPages(targets).some((target) => titleHasFolder(target.title, needle));
+}
+
+export async function closeCursorWindow(needle: string): Promise<void> {
+  const targets = await listTargets(config.cursorCdpUrl);
+  const page = listWorkbenchPages(targets).find((target) => titleHasFolder(target.title, needle));
+  if (!page) return;
+  const version = (await fetch(`${config.cursorCdpUrl}/json/version`).then((res) => res.json())) as {
+    webSocketDebuggerUrl?: string;
+  };
+  if (!version.webSocketDebuggerUrl) return;
+  await new Promise<void>((resolve) => {
+    const ws = new WebSocket(version.webSocketDebuggerUrl!);
+    const timer = setTimeout(() => {
+      ws.close();
+      resolve();
+    }, 5000);
+    ws.addEventListener("open", () => {
+      ws.send(
+        JSON.stringify({ id: 1, method: "Target.closeTarget", params: { targetId: page.id } }),
+      );
+    });
+    ws.addEventListener("message", (ev) => {
+      const msg = JSON.parse(String(ev.data)) as { id?: number };
+      if (msg.id !== 1) return;
+      clearTimeout(timer);
+      ws.close();
+      resolve();
+    });
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+export async function openCursorFolder(folder: string): Promise<void> {
+  const { spawn } = await import("node:child_process");
+  const child = spawn(config.cursorBin, ["--user-data-dir", config.cursorUserDataDir, folder], {
+    env: {
+      ...process.env,
+      DISPLAY: config.cursorDisplay,
+      XDG_RUNTIME_DIR: config.cursorRuntimeDir,
+      HOME: process.env.HOME || "/home/bridge",
+    },
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
 }

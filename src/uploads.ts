@@ -52,7 +52,7 @@ export type StoredUpload = {
   image?: ChatImage;
 };
 
-export async function storeUploadedFile(file: File): Promise<StoredUpload> {
+export async function storeUploadedFile(file: File, uploadsDir = config.uploadsDir): Promise<StoredUpload> {
   if (file.size <= 0) {
     throw new Error("Empty file.");
   }
@@ -67,10 +67,10 @@ export async function storeUploadedFile(file: File): Promise<StoredUpload> {
     throw new Error(`File type not allowed: ${mimeType || ext || "unknown"}`);
   }
 
-  await mkdir(config.uploadsDir, { recursive: true });
+  await mkdir(uploadsDir, { recursive: true });
   const id = randomBytes(8).toString("hex");
   const storedName = `${Date.now()}-${id}-${safeBaseName(file.name)}`;
-  const absolutePath = join(config.uploadsDir, storedName);
+  const absolutePath = join(uploadsDir, storedName);
   const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(absolutePath, buffer);
 

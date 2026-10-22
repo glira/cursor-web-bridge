@@ -14,6 +14,8 @@ const loginAttempts = new Map<string, LoginBucket>();
 
 export type SessionUser = {
   clientId: string;
+  userId: string;
+  role: "admin" | "member";
   displayName: string;
   expiresAt: number;
 };
@@ -34,24 +36,28 @@ export function validateDisplayName(raw: unknown): string | null {
   return name;
 }
 
-function encodeSession(user: { clientId: string; displayName: string }): string {
+function encodeSession(user: {
+  clientId: string;
+  userId: string;
+  role: "admin" | "member";
+  displayName: string;
+}): string {
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const nonce = randomBytes(16).toString("hex");
   const nameB64 = Buffer.from(user.displayName, "utf8").toString("base64url");
-  const payload = `${expiresAt}.${user.clientId}.${nameB64}.${nonce}`;
+  const payload = `${expiresAt}.${user.clientId}.${user.userId}.${user.role}.${nameB64}.${nonce}`;
   return `${payload}.${sign(payload)}`;
 }
 
 function decodeSession(token: string | undefined): SessionUser | null {
   if (!token) return null;
   const parts = token.split(".");
-  // New format: exp.clientId.nameB64.nonce.sig (5 parts)
-  // Legacy format: exp.nonce.sig (3 parts) — treat as unauthenticated so users re-login
-  if (parts.length !== 5) return null;
-  const [expiresRaw, clientId, nameB64, nonce, signature] = parts;
-  if (!expiresRaw || !clientId || !nameB64 || !nonce || !signature) return null;
+  if (parts.length !== 7) return null;
+  const [expiresRaw, clientId, userId, role, nameB64, nonce, signature] = parts;
+  if (!expiresRaw || !clientId || !userId || !role || !nameB64 || !nonce || !signature) return null;
+  if (role !== "admin" && role !== "member") return null;
 
-  const payload = `${expiresRaw}.${clientId}.${nameB64}.${nonce}`;
+  const payload = `${expiresRaw}.${clientId}.${userId}.${role}.${nameB64}.${nonce}`;
   const expected = sign(payload);
   try {
     const a = Buffer.from(signature);
@@ -64,6 +70,7 @@ function decodeSession(token: string | undefined): SessionUser | null {
   const expiresAt = Number(expiresRaw);
   if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
   if (!/^[a-f0-9]{16,64}$/i.test(clientId)) return null;
+  if (!/^[a-f0-9]{8,64}$/i.test(userId)) return null;
 
   let displayName: string;
   try {
@@ -74,7 +81,7 @@ function decodeSession(token: string | undefined): SessionUser | null {
   displayName = normalizeDisplayName(displayName);
   if (!displayName) return null;
 
-  return { clientId, displayName, expiresAt };
+  return { clientId, userId, role, displayName, expiresAt };
 }
 
 export function passwordsMatch(input: string, expected: string): boolean {
@@ -124,11 +131,16 @@ export function isAuthenticated(c: Context): boolean {
 
 export function setSessionCookie(
   c: Context,
-  user: { clientId?: string; displayName: string },
+  user: { clientId?: string; userId: string; role: "admin" | "member"; displayName: string },
 ): SessionUser {
   const clientId = user.clientId || randomBytes(16).toString("hex");
   const displayName = normalizeDisplayName(user.displayName);
-  const token = encodeSession({ clientId, displayName });
+  const token = encodeSession({
+    clientId,
+    userId: user.userId,
+    role: user.role,
+    displayName,
+  });
   const decoded = decodeSession(token)!;
   const secure =
     c.req.header("x-forwarded-proto") === "https" ||
@@ -152,5 +164,12 @@ export const requireAuth: MiddlewareHandler = async (c: Context, next: Next) => 
   if (!isAuthenticated(c)) {
     return apiError(c, "unauthenticated", 401);
   }
+  await next();
+};
+
+export const requireAdmin: MiddlewareHandler = async (c: Context, next: Next) => {
+  const user = getSessionUser(c);
+  if (!user) return apiError(c, "unauthenticated", 401);
+  if (user.role !== "admin") return apiError(c, "forbidden", 403);
   await next();
 };

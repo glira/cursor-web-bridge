@@ -124,7 +124,7 @@ button.danger {
   min-height: 100vh;
   height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   overflow: hidden;
 }
 
@@ -606,6 +606,70 @@ button.danger {
 
 .modal-actions button {
   width: auto;
+}
+
+.room-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.room-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.room-tab.active {
+  background: var(--accent, #3b82f6);
+  color: white;
+  border-color: transparent;
+}
+
+.room-tab-busy {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f5c16c;
+}
+
+.admin-card {
+  width: min(640px, 100%);
+}
+
+.admin-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 @media (max-width: 640px) {

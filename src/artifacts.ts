@@ -22,31 +22,65 @@ const PATH_RE = /(?:^|[\s`"'(=:])(\/tmp\/[A-Za-z0-9._+@%-]+(?:\/[A-Za-z0-9._+@%-
 /** Basename the agent printed without the /tmp prefix, e.g. `maiva-logs-2026-09-30.zip`. */
 const BASENAME_RE = /(?:^|[\s`"'(=:])([A-Za-z0-9][A-Za-z0-9._+-]{0,180}\.[A-Za-z0-9]{1,8})/g;
 
-let artifacts = new Map<string, ArtifactRecord>();
-let loaded = false;
+const stores = new Map<string, { artifacts: Map<string, ArtifactRecord>; loaded: boolean }>();
 
-async function ensureLoaded(): Promise<void> {
-  if (loaded) return;
-  loaded = true;
+function storeOf(roomId: string) {
+  let store = stores.get(roomId);
+  if (!store) {
+    store = { artifacts: new Map(), loaded: false };
+    stores.set(roomId, store);
+  }
+  return store;
+}
+
+function artifactsFile(roomId: string): string {
+  return join(config.dataDir, "rooms", roomId, "artifacts.json");
+}
+
+export async function migrateLegacyArtifacts(): Promise<void> {
+  const dest = artifactsFile("geral");
   try {
-    const raw = await readFile(config.artifactsPath, "utf8");
+    await readFile(dest, "utf8");
+    return;
+  } catch {
+    // not migrated yet
+  }
+  try {
+    await mkdir(dirname(dest), { recursive: true });
+    const { rename } = await import("node:fs/promises");
+    await rename(config.artifactsPath, dest);
+    console.log("[artifacts] migrated legacy index to the general tab");
+  } catch {
+    // no legacy file
+  }
+}
+
+async function ensureLoaded(roomId: string): Promise<Map<string, ArtifactRecord>> {
+  const store = storeOf(roomId);
+  if (store.loaded) return store.artifacts;
+  store.loaded = true;
+  try {
+    const raw = await readFile(artifactsFile(roomId), "utf8");
     const parsed = JSON.parse(raw) as ArtifactRecord[];
     if (Array.isArray(parsed)) {
       for (const item of parsed) {
         if (item?.path && typeof item.path === "string") {
-          artifacts.set(normalizeRegisteredPath(item.path), item);
+          store.artifacts.set(normalizeRegisteredPath(item.path), item);
         }
       }
     }
   } catch {
-    artifacts = new Map();
+    store.artifacts = new Map();
   }
+  return store.artifacts;
 }
 
-async function persist(): Promise<void> {
-  await mkdir(dirname(config.artifactsPath), { recursive: true });
+async function persist(roomId: string): Promise<void> {
+  const artifacts = storeOf(roomId).artifacts;
+  const path = artifactsFile(roomId);
+  await mkdir(dirname(path), { recursive: true });
   const list = [...artifacts.values()].sort((a, b) => a.registeredAt - b.registeredAt);
-  await writeFile(config.artifactsPath, JSON.stringify(list, null, 2), "utf8");
+  await writeFile(path, JSON.stringify(list, null, 2), "utf8");
 }
 
 function stripTrailingSlash(p: string): string {
@@ -115,12 +149,12 @@ export async function filterExistingTmpPaths(paths: string[]): Promise<string[]>
  * Resolve a path for download: must be under /tmp after realpath,
  * and must be registered (or a child of a registered dir).
  */
-export async function resolveSafeTmpPath(requested: string): Promise<{
+export async function resolveSafeTmpPath(roomId: string, requested: string): Promise<{
   absolutePath: string;
   kind: ArtifactKind;
   registered: ArtifactRecord | null;
 }> {
-  await ensureLoaded();
+  const artifacts = await ensureLoaded(roomId);
   const requestedNorm = normalizeRegisteredPath(requested);
   if (!requestedNorm.startsWith(`${TMP_ROOT}/`)) {
     throw new Error("Only paths under /tmp/ are allowed.");
@@ -147,7 +181,7 @@ export async function resolveSafeTmpPath(requested: string): Promise<{
   const registered =
     artifacts.get(normalizeRegisteredPath(abs)) ||
     artifacts.get(normalizeRegisteredPath(real)) ||
-    findParentRegistered(real);
+    findParentRegistered(artifacts, real);
 
   if (!registered) {
     throw new Error("File is not registered in this session.");
@@ -161,7 +195,10 @@ export async function resolveSafeTmpPath(requested: string): Promise<{
   };
 }
 
-function findParentRegistered(realPath: string): ArtifactRecord | null {
+function findParentRegistered(
+  artifacts: Map<string, ArtifactRecord>,
+  realPath: string,
+): ArtifactRecord | null {
   for (const rec of artifacts.values()) {
     if (rec.kind !== "dir") continue;
     const parent = resolve(rec.path);
@@ -196,8 +233,8 @@ async function statArtifact(path: string): Promise<{
   }
 }
 
-export async function registerArtifacts(paths: string[]): Promise<ArtifactRecord[]> {
-  await ensureLoaded();
+export async function registerArtifacts(roomId: string, paths: string[]): Promise<ArtifactRecord[]> {
+  const artifacts = await ensureLoaded(roomId);
   const created: ArtifactRecord[] = [];
   for (const raw of paths) {
     const path = normalizeRegisteredPath(raw);
@@ -237,12 +274,12 @@ export async function registerArtifacts(paths: string[]): Promise<ArtifactRecord
       }
     }
   }
-  if (created.length > 0) await persist();
+  if (created.length > 0) await persist(roomId);
   return created;
 }
 
-export async function listArtifacts(): Promise<ArtifactRecord[]> {
-  await ensureLoaded();
+export async function listArtifacts(roomId: string): Promise<ArtifactRecord[]> {
+  const artifacts = await ensureLoaded(roomId);
   // Refresh sizes for existing entries (best-effort)
   const out: ArtifactRecord[] = [];
   for (const rec of artifacts.values()) {
@@ -260,17 +297,18 @@ export async function listArtifacts(): Promise<ArtifactRecord[]> {
   return out.sort((a, b) => a.registeredAt - b.registeredAt);
 }
 
-export async function clearArtifacts(): Promise<void> {
-  await ensureLoaded();
-  artifacts = new Map();
-  await persist();
+export async function clearArtifacts(roomId: string): Promise<void> {
+  const store = storeOf(roomId);
+  await ensureLoaded(roomId);
+  store.artifacts = new Map();
+  await persist(roomId);
 }
 
 export function createFileReadStream(absolutePath: string): Readable {
   return createReadStream(absolutePath);
 }
 
-export async function zipDirectoryToTemp(dirPath: string): Promise<string> {
+export async function zipDirectoryToTemp(roomId: string, dirPath: string): Promise<string> {
   const siblingZip = `${stripTrailingSlash(dirPath)}.zip`;
   try {
     const st = await lstat(siblingZip);
@@ -298,7 +336,7 @@ export async function zipDirectoryToTemp(dirPath: string): Promise<string> {
   });
 
   // Register the export zip so it can be re-downloaded
-  await registerArtifacts([outZip]);
+  await registerArtifacts(roomId, [outZip]);
   return outZip;
 }
 

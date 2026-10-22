@@ -1,5 +1,5 @@
 import { config as loadEnv } from "dotenv";
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 loadEnv();
@@ -37,6 +37,22 @@ export const config = {
   cursorCdpUrl: (process.env.CURSOR_CDP_URL || "http://127.0.0.1:9222").replace(/\/$/, ""),
   // Prefer Cursor window whose title/workspace matches this (default: pasta do CURSOR_CWD).
   cursorCdpTarget: (optional("CURSOR_CDP_TARGET") || basename(cursorCwd)).toLowerCase(),
+  adminUser: (optional("BRIDGE_ADMIN_USER") || "").toLowerCase(),
+  adminPassword: optional("BRIDGE_ADMIN_PASSWORD") || "",
+  workspacesBase: resolve(process.env.WORKSPACES_BASE?.trim() || dirname(cursorCwd)),
+  workspaceEstRamMb: Number(process.env.WORKSPACE_EST_RAM_MB || 2000),
+  workspaceEstDiskMb: Number(process.env.WORKSPACE_EST_DISK_MB || 4000),
+  workspaceEstDiskSharedMb: Number(process.env.WORKSPACE_EST_DISK_SHARED_MB || 600),
+  maxWorkspaces: Number(process.env.MAX_WORKSPACES || 0),
+  cursorBin: process.env.CURSOR_BIN?.trim() || "/usr/share/cursor/cursor",
+  cursorUserDataDir:
+    process.env.CURSOR_USER_DATA_DIR?.trim() ||
+    resolve(process.env.HOME || "/home/bridge", ".config", "Cursor"),
+  cursorDisplay: process.env.CURSOR_DISPLAY?.trim() || ":99",
+  cursorRuntimeDir:
+    process.env.CURSOR_RUNTIME_DIR?.trim() ||
+    process.env.XDG_RUNTIME_DIR?.trim() ||
+    resolve(process.env.HOME || "/home/bridge", ".runtime"),
   cdpPollMs: Number(process.env.CDP_POLL_MS || 400),
   // Soft window / extension slice while the agent is active (not a hard wall).
   cdpTimeoutMs: Number(process.env.CDP_TIMEOUT_MS || 600_000),

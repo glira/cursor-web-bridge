@@ -22,6 +22,7 @@ export type RoomEventType =
   | "busy"
   | "decision"
   | "decision_resolved"
+  | "rooms_status"
   | "rtc_peer_joined"
   | "rtc_peer_left"
   | "rtc_peers"
@@ -47,129 +48,191 @@ export type RtcPeer = {
 
 type Subscriber = {
   id: string;
+  roomId: string;
   clientId: string;
   displayName: string;
   send: (event: RoomEvent) => void;
 };
 
-const subscribers = new Map<string, Subscriber>();
+type RoomRuntime = {
+  busy: boolean;
+  busyBy: { clientId: string; displayName: string } | null;
+  streamingMessageId: string | null;
+  pendingDecision: PendingDecision | null;
+  decisionClaimed: boolean;
+  suppressDecisionKey: string;
+  suppressDecisionUntil: number;
+  subscribers: Map<string, Subscriber>;
+};
+
+const runtimes = new Map<string, RoomRuntime>();
+const statusSubscribers = new Map<string, (event: RoomEvent) => void>();
 const presence = new Map<string, PresenceMember>();
 const rtcPeers = new Map<string, RtcPeer>();
 
-let agentBusy = false;
-let busyBy: { clientId: string; displayName: string } | null = null;
-let streamingMessageId: string | null = null;
-let pendingDecision: PendingDecision | null = null;
-let decisionClaimed = false;
-let suppressDecisionKey = "";
-let suppressDecisionUntil = 0;
-
-export function isRoomBusy(): boolean {
-  return agentBusy;
+function runtime(roomId: string): RoomRuntime {
+  let room = runtimes.get(roomId);
+  if (!room) {
+    room = {
+      busy: false,
+      busyBy: null,
+      streamingMessageId: null,
+      pendingDecision: null,
+      decisionClaimed: false,
+      suppressDecisionKey: "",
+      suppressDecisionUntil: 0,
+      subscribers: new Map(),
+    };
+    runtimes.set(roomId, room);
+  }
+  return room;
 }
 
-export function getBusyBy(): { clientId: string; displayName: string } | null {
-  return busyBy;
+function allSubscribers(): Subscriber[] {
+  return [...runtimes.values()].flatMap((room) => [...room.subscribers.values()]);
 }
 
-export function setRoomBusy(user: { clientId: string; displayName: string } | null): void {
-  agentBusy = Boolean(user);
-  busyBy = user;
+export function isRoomBusy(roomId: string): boolean {
+  return runtime(roomId).busy;
+}
+
+export function getBusyBy(roomId: string): { clientId: string; displayName: string } | null {
+  return runtime(roomId).busyBy;
+}
+
+export function roomBusySnapshot(): Array<{
+  id: string;
+  busy: boolean;
+  busyBy: { clientId: string; displayName: string } | null;
+}> {
+  return [...runtimes.entries()].map(([id, room]) => ({
+    id,
+    busy: room.busy,
+    busyBy: room.busyBy,
+  }));
+}
+
+function emitRoomsStatus(): void {
+  const event: RoomEvent = {
+    type: "rooms_status",
+    data: { rooms: roomBusySnapshot() },
+    at: Date.now(),
+  };
+  for (const send of statusSubscribers.values()) {
+    try {
+      send(event);
+    } catch {
+      // ignore a closed status stream
+    }
+  }
+}
+
+export function setRoomBusy(
+  roomId: string,
+  user: { clientId: string; displayName: string } | null,
+): void {
+  const room = runtime(roomId);
+  room.busy = Boolean(user);
+  room.busyBy = user;
   console.log(
-    `[room] busy=${agentBusy} by=${busyBy?.displayName ?? "-"} subscribers=${subscribers.size}`,
+    `[room] room=${roomId} busy=${room.busy} by=${room.busyBy?.displayName ?? "-"} subscribers=${room.subscribers.size}`,
   );
-  broadcast({
+  broadcast(roomId, {
     type: "busy",
-    data: {
-      busy: agentBusy,
-      by: busyBy,
-    },
+    data: { busy: room.busy, by: room.busyBy },
     at: Date.now(),
   });
+  emitRoomsStatus();
 }
 
-export function setStreamingMessageId(id: string | null): void {
-  streamingMessageId = id;
+export function setStreamingMessageId(roomId: string, id: string | null): void {
+  runtime(roomId).streamingMessageId = id;
 }
 
-export function getStreamingMessageId(): string | null {
-  return streamingMessageId;
+export function getStreamingMessageId(roomId: string): string | null {
+  return runtime(roomId).streamingMessageId;
 }
 
 function sameDecision(a: PendingDecision | null, b: PendingDecision | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function getPendingDecision(): PendingDecision | null {
-  return pendingDecision;
+export function getPendingDecision(roomId: string): PendingDecision | null {
+  return runtime(roomId).pendingDecision;
 }
 
-export function setPendingDecision(decision: PendingDecision | null): void {
+export function setPendingDecision(roomId: string, decision: PendingDecision | null): void {
+  const room = runtime(roomId);
   if (
     decision &&
-    Date.now() < suppressDecisionUntil &&
-    JSON.stringify(decision) === suppressDecisionKey
+    Date.now() < room.suppressDecisionUntil &&
+    JSON.stringify(decision) === room.suppressDecisionKey
   ) {
     return;
   }
-  if (sameDecision(pendingDecision, decision)) return;
-  pendingDecision = decision;
-  decisionClaimed = false;
+  if (sameDecision(room.pendingDecision, decision)) return;
+  room.pendingDecision = decision;
+  room.decisionClaimed = false;
   if (decision) {
-    console.log(`[room] decision kind=${decision.kind} options=${decision.options.length}`);
-    broadcast({ type: "decision", data: decision, at: Date.now() });
+    console.log(`[room] room=${roomId} decision kind=${decision.kind} options=${decision.options.length}`);
+    broadcast(roomId, { type: "decision", data: decision, at: Date.now() });
   }
 }
 
-export function claimDecision(optionId: string):
+export function claimDecision(
+  roomId: string,
+  optionId: string,
+):
   | { ok: true; decision: PendingDecision }
   | { ok: false; reason: "none" | "claimed" | "unknown" } {
-  if (!pendingDecision) return { ok: false, reason: "none" };
-  if (decisionClaimed) return { ok: false, reason: "claimed" };
-  if (!pendingDecision.options.some((option) => option.id === optionId)) {
+  const room = runtime(roomId);
+  if (!room.pendingDecision) return { ok: false, reason: "none" };
+  if (room.decisionClaimed) return { ok: false, reason: "claimed" };
+  if (!room.pendingDecision.options.some((option) => option.id === optionId)) {
     return { ok: false, reason: "unknown" };
   }
-  decisionClaimed = true;
-  return { ok: true, decision: pendingDecision };
+  room.decisionClaimed = true;
+  return { ok: true, decision: room.pendingDecision };
 }
 
-export function releaseDecisionClaim(): void {
-  decisionClaimed = false;
+export function releaseDecisionClaim(roomId: string): void {
+  runtime(roomId).decisionClaimed = false;
 }
 
-export function clearPendingDecision(extra?: { by?: string; optionId?: string }): void {
-  if (!pendingDecision) return;
-  suppressDecisionKey = JSON.stringify(pendingDecision);
-  suppressDecisionUntil = Date.now() + 4_000;
-  pendingDecision = null;
-  decisionClaimed = false;
+export function clearPendingDecision(
+  roomId: string,
+  extra?: { by?: string; optionId?: string },
+): void {
+  const room = runtime(roomId);
+  if (!room.pendingDecision) return;
+  room.suppressDecisionKey = JSON.stringify(room.pendingDecision);
+  room.suppressDecisionUntil = Date.now() + 4_000;
+  room.pendingDecision = null;
+  room.decisionClaimed = false;
   const by = extra?.by ?? "";
   const optionId = extra?.optionId ?? "";
-  broadcast({
+  broadcast(roomId, {
     type: "decision_resolved",
-    data: {
-      by,
-      optionId,
-      dismissed: !optionId,
-    },
+    data: { by, optionId, dismissed: !optionId },
     at: Date.now(),
   });
-  if (!streamingMessageId && agentBusy) {
-    setRoomBusy(null);
+  if (!room.streamingMessageId && room.busy) {
+    setRoomBusy(roomId, null);
   }
 }
 
-export function broadcast(event: RoomEvent): void {
+export function broadcast(roomId: string, event: RoomEvent): void {
+  const room = runtime(roomId);
   if (
     event.type !== "assistant_token" &&
     event.type !== "composer_draft" &&
     event.type !== "rtc_signal"
   ) {
     console.log(
-      `[room] broadcast type=${event.type} subscribers=${subscribers.size}`,
+      `[room] broadcast room=${roomId} type=${event.type} subscribers=${room.subscribers.size}`,
     );
   }
-  for (const sub of subscribers.values()) {
+  for (const sub of room.subscribers.values()) {
     try {
       sub.send(event);
     } catch (err) {
@@ -181,9 +244,22 @@ export function broadcast(event: RoomEvent): void {
   }
 }
 
+function broadcastGlobal(event: RoomEvent): void {
+  for (const sub of allSubscribers()) {
+    try {
+      sub.send(event);
+    } catch (err) {
+      console.warn(
+        `[room] global send failed id=${sub.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+}
+
 export function sendToClient(clientId: string, event: RoomEvent): number {
   let n = 0;
-  for (const sub of subscribers.values()) {
+  for (const sub of allSubscribers()) {
     if (sub.clientId !== clientId) continue;
     try {
       sub.send(event);
@@ -199,10 +275,11 @@ export function sendToClient(clientId: string, event: RoomEvent): number {
 }
 
 export function publishArtifact(
+  roomId: string,
   artifact: ArtifactRecord,
   extra?: { messageId?: string },
 ): void {
-  broadcast({
+  broadcast(roomId, {
     type: "artifact",
     data: { ...artifact, messageId: extra?.messageId },
     at: Date.now(),
@@ -210,10 +287,11 @@ export function publishArtifact(
 }
 
 export function publishArtifacts(
+  roomId: string,
   list: ArtifactRecord[],
   extra?: { messageId?: string },
 ): void {
-  for (const artifact of list) publishArtifact(artifact, extra);
+  for (const artifact of list) publishArtifact(roomId, artifact, extra);
 }
 
 function touchPresence(clientId: string, displayName: string): void {
@@ -227,7 +305,7 @@ function touchPresence(clientId: string, displayName: string): void {
 function presenceList(): PresenceMember[] {
   const now = Date.now();
   for (const [id, member] of presence) {
-    if (now - member.lastSeenAt > 60_000 && ![...subscribers.values()].some((s) => s.clientId === id)) {
+    if (now - member.lastSeenAt > 60_000 && !allSubscribers().some((s) => s.clientId === id)) {
       presence.delete(id);
     }
   }
@@ -235,7 +313,7 @@ function presenceList(): PresenceMember[] {
 }
 
 function emitPresence(): void {
-  broadcast({
+  broadcastGlobal({
     type: "presence",
     data: { members: presenceList() },
     at: Date.now(),
@@ -258,13 +336,13 @@ export function joinRtc(user: { clientId: string; displayName: string }): {
   const already = rtcPeers.has(user.clientId);
   rtcPeers.set(user.clientId, self);
   if (!already) {
-    broadcast({
+    broadcastGlobal({
       type: "rtc_peer_joined",
       data: { peer: self, peers: listRtcPeers() },
       at: Date.now(),
     });
   } else {
-    broadcast({
+    broadcastGlobal({
       type: "rtc_peers",
       data: { peers: listRtcPeers() },
       at: Date.now(),
@@ -278,7 +356,7 @@ export function leaveRtc(clientId: string): boolean {
   const peer = rtcPeers.get(clientId);
   if (!peer) return false;
   rtcPeers.delete(clientId);
-  broadcast({
+  broadcastGlobal({
     type: "rtc_peer_left",
     data: { peer, peers: listRtcPeers() },
     at: Date.now(),
@@ -307,7 +385,7 @@ export function relayRtcSignal(opts: {
   return n > 0;
 }
 
-export async function buildSnapshot(): Promise<{
+export async function buildSnapshot(roomId: string): Promise<{
   messages: HistoryMessage[];
   artifacts: ArtifactRecord[];
   historyHasMore: boolean;
@@ -318,7 +396,8 @@ export async function buildSnapshot(): Promise<{
   pendingDecision: PendingDecision | null;
   rtcPeers: RtcPeer[];
 }> {
-  const page = await loadHistoryPage({ limit: HISTORY_PAGE });
+  const room = runtime(roomId);
+  const page = await loadHistoryPage(roomId, { limit: HISTORY_PAGE });
   const messages = "error" in page ? [] : page.messages;
   const historyHasMore = "error" in page ? false : page.hasMore;
   return {
@@ -326,44 +405,56 @@ export async function buildSnapshot(): Promise<{
     artifacts: [],
     historyHasMore,
     members: presenceList(),
-    busy: agentBusy,
-    busyBy,
-    streamingMessageId,
-    pendingDecision,
+    busy: room.busy,
+    busyBy: room.busyBy,
+    streamingMessageId: room.streamingMessageId,
+    pendingDecision: room.pendingDecision,
     rtcPeers: listRtcPeers(),
   };
 }
 
 export function subscribe(opts: {
+  roomId: string;
   clientId: string;
   displayName: string;
   send: (event: RoomEvent) => void;
 }): () => void {
+  const room = runtime(opts.roomId);
   const id = randomBytes(8).toString("hex");
   const sub: Subscriber = {
     id,
+    roomId: opts.roomId,
     clientId: opts.clientId,
     displayName: opts.displayName,
     send: opts.send,
   };
-  subscribers.set(id, sub);
+  room.subscribers.set(id, sub);
   touchPresence(opts.clientId, opts.displayName);
   console.log(
-    `[room] subscribe id=${id} client=${opts.displayName} total=${subscribers.size}`,
+    `[room] subscribe room=${opts.roomId} id=${id} client=${opts.displayName} total=${room.subscribers.size}`,
   );
   emitPresence();
 
   return () => {
-    subscribers.delete(id);
+    room.subscribers.delete(id);
     console.log(
-      `[room] unsubscribe id=${id} client=${opts.displayName} total=${subscribers.size}`,
+      `[room] unsubscribe room=${opts.roomId} id=${id} client=${opts.displayName} total=${room.subscribers.size}`,
     );
-    const stillHere = [...subscribers.values()].some((s) => s.clientId === opts.clientId);
+    const stillHere = allSubscribers().some((item) => item.clientId === opts.clientId);
     if (!stillHere) {
       presence.delete(opts.clientId);
       leaveRtc(opts.clientId);
     }
     emitPresence();
+  };
+}
+
+export function subscribeStatus(send: (event: RoomEvent) => void): () => void {
+  const id = randomBytes(8).toString("hex");
+  statusSubscribers.set(id, send);
+  send({ type: "rooms_status", data: { rooms: roomBusySnapshot() }, at: Date.now() });
+  return () => {
+    statusSubscribers.delete(id);
   };
 }
 

@@ -9,22 +9,20 @@
   <body class="page-login">
     <main class="card">
       <h1>Cursor Bridge</h1>
-      <p class="muted" data-i18n="login.lead">
-        Join the shared room with your name and the team password.
-      </p>
-      <form id="login-form">
-        <label for="displayName" data-i18n="login.name">Your name</label>
-        <input
-          id="displayName"
-          name="displayName"
-          type="text"
-          autocomplete="nickname"
-          maxlength="40"
-          required
-          autofocus
-          data-i18n-placeholder="login.namePlaceholder"
-          placeholder="e.g. Ana"
-        />
+        <p class="muted" data-i18n="login.lead">
+          Sign in with the username and password an admin created for you.
+        </p>
+        <form id="login-form">
+          <label for="username" data-i18n="login.username">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            maxlength="32"
+            required
+            autofocus
+          />
         <label for="password" data-i18n="login.password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required />
         <button type="submit" data-i18n="login.submit">Enter room</button>
@@ -32,24 +30,24 @@
       </form>
     </main>
     <script type="module">
-      import { t, applyI18n } from "./i18n.js?v=4";
+      import { t, applyI18n } from "./i18n.js?v=7";
 
       applyI18n();
 
       const form = document.getElementById("login-form");
       const errorEl = document.getElementById("error");
-      const savedName = localStorage.getItem("bridgeDisplayName") || "";
-      if (savedName) document.getElementById("displayName").value = savedName;
+      const savedName = localStorage.getItem("bridgeUsername") || "";
+      if (savedName) document.getElementById("username").value = savedName;
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorEl.hidden = true;
-        const displayName = document.getElementById("displayName").value.trim();
+        const username = document.getElementById("username").value.trim();
         const password = document.getElementById("password").value;
         const res = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password, displayName }),
+          body: JSON.stringify({ username, password }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -57,7 +55,7 @@
           errorEl.hidden = false;
           return;
         }
-        localStorage.setItem("bridgeDisplayName", displayName);
+        localStorage.setItem("bridgeUsername", username);
         location.href = "/chat";
       });
     </script>

@@ -1,15 +1,17 @@
 # Security
 
-Anyone who has the room password and the URL (localhost, Cloudflare Tunnel, or Ngrok) can send prompts to a Cursor agent with read/write access to the configured workspace. Treat that as repository access.
+Anyone who can sign in, and who has the URL (localhost, Cloudflare Tunnel, or Ngrok), can send prompts on every tab. Each tab can read and write its workspace: Geral is `CURSOR_CWD`, and extra tabs are git worktrees. Treat an account as access to those checkouts.
 
-If you put **Cloudflare Access** in front of the tunnel, teammates hit an edge login before the room screen. `BRIDGE_PASSWORD` is still required — Access does not replace it.
+Sign-in is a username and password stored as a scrypt hash in `data/users.json`. `BRIDGE_PASSWORD` is still required for the process to start. It is not the login password.
+
+If you put **Cloudflare Access** in front of the tunnel, teammates hit an edge login before the room screen. Access does not replace the account login.
 
 ## Do not file a public issue with
 
-- `BRIDGE_PASSWORD`, `BRIDGE_SESSION_SECRET`, or `CURSOR_API_KEY`
+- `BRIDGE_ADMIN_PASSWORD`, `BRIDGE_SESSION_SECRET`, `BRIDGE_PASSWORD`, or `CURSOR_API_KEY`
 - A live public URL (`BRIDGE_PUBLIC_URL`, Ngrok, or the tunnel hostname)
 - `.env` contents
-- Dumps of `data/room-history.jsonl` or `data/artifacts.json`
+- `data/users.json`, `data/rooms.json`, or dumps of `data/rooms/*/history.jsonl` and `artifacts.json`
 - Tunnel IDs or `~/.cloudflared/*.json` credential files
 
 ## Reporting a problem
@@ -26,7 +28,7 @@ Describe the vector without pasting secrets. If the report needs reproduction cr
 
 ## Good practice
 
-- Strong password, distinct from the Cursor account
+- Distinct account passwords, not the Cursor account password. Admins create accounts in the panel; do not put real usernames or passwords in the repository
 - Do not commit `.env`
 - Limit Access policies to team emails when Access is enabled
 - Revoke the Ngrok tunnel (or stop the process) when an ad-hoc session ends

@@ -55,6 +55,7 @@ const messages: Record<UiLocale, Record<string, string>> = {
     workspace_title_invalid: "Invalid tab name.",
     workspace_path: "Could not choose a folder for that tab.",
     workspace_failed: "Could not create the tab.",
+    opening_window: "Opening window…",
   },
   pt: {
     too_many_attempts: "Muitas tentativas. Aguarde e tente de novo.",
@@ -108,6 +109,7 @@ const messages: Record<UiLocale, Record<string, string>> = {
     workspace_title_invalid: "Nome de aba inválido.",
     workspace_path: "Não foi possível escolher a pasta dessa aba.",
     workspace_failed: "Não foi possível criar a aba.",
+    opening_window: "abrindo janela…",
   },
 };
 

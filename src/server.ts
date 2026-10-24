@@ -60,6 +60,7 @@ import {
   setRoomBusy,
   getStreamingMessageId,
   setStreamingMessageId,
+  touchRoomActivity,
   subscribe,
   subscribeStatus,
 } from "./room.js";
@@ -83,6 +84,7 @@ import {
   ensureAllWindows,
   ensureRoomWindow,
   prepareWorkspaceBase,
+  startIdleWindowCloser,
   type Capacity,
 } from "./workspaces.js";
 
@@ -669,12 +671,25 @@ app.post("/api/chat", requireAuth, async (c) => {
     };
 
     try {
+      touchRoomActivity(room.id);
+      if (!(await cursorWindowOpen(room.cdpTitle))) {
+        broadcast(room.id, {
+          type: "status",
+          data: {
+            message: tApi(locale, "opening_window"),
+            code: "opening_window",
+            messageId: assistantMessageId,
+          },
+          at: Date.now(),
+        });
+      }
       await ensureRoomWindow(room);
       const result = await runChatTurn({
         text,
         images,
         attachments,
         target: room.cdpTitle,
+        reopenWindow: () => ensureRoomWindow(room),
         handlers: {
           onText: (chunk) => {
             assistantText += chunk;
@@ -788,6 +803,7 @@ app.post("/api/chat", requireAuth, async (c) => {
       });
       console.error(`[chat] turn failed messageId=${assistantMessageId}`, message);
     } finally {
+      touchRoomActivity(room.id);
       setStreamingMessageId(room.id, null);
       if (!getPendingDecision(room.id)) {
         setRoomBusy(room.id, null);
@@ -996,6 +1012,7 @@ async function main(): Promise<void> {
   await initStore();
   await prepareWorkspaceBase();
   void ensureAllWindows();
+  startIdleWindowCloser();
 
   console.log(`[bridge] backend -> ${config.backend}`);
   if (config.backend === "cdp") {

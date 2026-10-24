@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, rm, symlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { config } from "./config.js";
 import { closeCursorWindow, cursorWindowOpen, openCursorFolder } from "./cdp/bridge.js";
+import { getPendingDecision, isRoomBusy, roomLastActivityAt } from "./room.js";
 import {
   GENERAL_ROOM_ID,
   getRoom,
@@ -275,6 +276,42 @@ export async function ensureRoomWindow(room: RoomRecord): Promise<void> {
   if (await cursorWindowOpen(room.cdpTitle)) return;
   console.log(`[workspace] reopening window id=${room.id}`);
   await openCursorFolder(room.folder);
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (await cursorWindowOpen(room.cdpTitle)) return;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  console.warn(`[workspace] window id=${room.id} did not appear`);
+}
+
+async function closeIdleWindows(): Promise<void> {
+  const limitMs = config.roomIdleCloseMin * 60_000;
+  if (!Number.isFinite(limitMs) || limitMs <= 0) return;
+  const now = Date.now();
+  const rooms = await listRooms();
+  for (const room of rooms) {
+    if (room.id === GENERAL_ROOM_ID || !room.removable || room.status !== "ready") continue;
+    if (isRoomBusy(room.id) || getPendingDecision(room.id)) continue;
+    if (now - roomLastActivityAt(room.id) < limitMs) continue;
+    if (!(await cursorWindowOpen(room.cdpTitle))) continue;
+    console.log(`[workspace] closing idle window id=${room.id}`);
+    try {
+      await closeCursorWindow(room.cdpTitle);
+    } catch (err) {
+      console.warn(`[workspace] idle close ${room.id}`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+export function startIdleWindowCloser(): void {
+  if (!Number.isFinite(config.roomIdleCloseMin) || config.roomIdleCloseMin <= 0) return;
+  console.log(`[workspace] idle close every 5 min after ${config.roomIdleCloseMin} min`);
+  const timer = setInterval(() => {
+    void closeIdleWindows().catch((err) => {
+      console.warn("[workspace] idle close", err instanceof Error ? err.message : err);
+    });
+  }, 5 * 60 * 1000);
+  timer.unref();
 }
 
 export async function ensureAllWindows(): Promise<void> {

@@ -58,6 +58,10 @@ export const config = {
   cdpTimeoutMs: Number(process.env.CDP_TIMEOUT_MS || 600_000),
   // Absolute cap for a single CDP turn (default 45 min).
   cdpMaxTimeoutMs: Number(process.env.CDP_MAX_TIMEOUT_MS || 2_700_000),
+  // Consecutive time without a readable Cursor window before the turn stops as timeout.
+  cdpStallMaxMs: Number(process.env.CDP_STALL_MAX_MS || 180_000),
+  // Close extra-tab windows after this many idle minutes. 0 disables it.
+  roomIdleCloseMin: Number(process.env.ROOM_IDLE_CLOSE_MIN || 0),
   dataDir: resolve(rootDir, "data"),
   // Inside the agent cwd so local tools can read attachments.
   uploadsDir: resolve(cursorCwd, ".cursor-web-bridge-uploads"),

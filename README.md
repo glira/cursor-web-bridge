@@ -83,7 +83,7 @@ Every signed-in user sees every tab. A tab is a conversation bound to one Cursor
 - **Extra tabs** are created by an admin. The bridge adds a git worktree beside the main checkout, on a branch `ws/<slug>`, from the current `HEAD` of Geral. The slug is `[a-z0-9-]`.
 - Each extra tab gets its own `node_modules` via `npm ci`, so an install in one tab does not change the others. If disk is tight, the admin can create the tab with shared dependencies: `node_modules` is a symlink to Geral's, and the panel says so.
 - Creating a tab answers HTTP 202 and finishes in the background, because `npm ci` can take longer than a proxy timeout. The tab shows `creating`, then `ready` or `error`. A restart in the middle marks it `error` / `interrupted`.
-- The bridge opens the folder in the Cursor process that is already running. On startup, and before a turn, it reopens a window that disappeared from CDP.
+- The bridge opens the folder in the Cursor process that is already running. On startup, and before a turn, it reopens a window that disappeared from CDP. The panel says it is opening the window while that happens. If `ROOM_IDLE_CLOSE_MIN` is greater than 0, an extra tab with no turn and no pending decision for that many minutes has its window closed. Geral stays open. The next message opens the window again.
 - Removing a tab closes that window. If the worktree has uncommitted changes, the admin must confirm. The worktree, its branch, and that tab's history can then be deleted. Geral cannot be removed.
 
 ### Resource check
@@ -234,6 +234,8 @@ On Geral, open **Live**: join, allow mic and camera, mute, leave. Signaling stay
 
 The bridge does not end the turn just because the first bubble stabilized. While the agent is working, the soft deadline (`CDP_TIMEOUT_MS`) extends up to `CDP_MAX_TIMEOUT_MS` (45 minutes). After the Stop control was seen, idle grace is 90 seconds; otherwise it is 25 seconds. Activity resets the idle timer. If the cap is hit while the agent is still active, the panel marks `timeout` and keeps the partial text.
 
+A frozen window does not end the turn at the first 15 second CDP timeout. The bridge keeps the partial text and tries again. If the debug socket closes, it reopens that tab's window and reconnects. After `CDP_STALL_MAX_MS` (3 minutes) without a successful read, the turn ends as `timeout` with whatever text already arrived.
+
 ## `/tmp` downloads
 
 When the agent prints a path such as `/tmp/report.zip` or `file:///tmp/folder/`, the bridge records it on **that tab**, attaches it to the message, and shows a download button. Only paths mentioned in that tab's session can be downloaded. A symlink that escapes `/tmp` is blocked.
@@ -266,6 +268,8 @@ When the agent prints a path such as `/tmp/report.zip` or `file:///tmp/folder/`,
 | `CDP_POLL_MS` | DOM poll interval (default `400`) |
 | `CDP_TIMEOUT_MS` | Soft window while the agent works (default `600000`) |
 | `CDP_MAX_TIMEOUT_MS` | Absolute cap for one CDP turn (default `2700000`, 45 min) |
+| `CDP_STALL_MAX_MS` | How long a frozen window can stall one turn before it stops as `timeout` (default `180000`) |
+| `ROOM_IDLE_CLOSE_MIN` | Close extra-tab windows after this many idle minutes. `0` keeps them open |
 | `RTC_STUN_URLS` | STUN for WebRTC |
 | `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | Optional TURN |
 | `TUNNEL_PROVIDER` | `ngrok` or `cloudflare`, used by `./start-local.sh` |

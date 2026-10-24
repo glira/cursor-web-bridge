@@ -89,6 +89,7 @@ export async function runChatTurn(opts: {
   attachments: ChatAttachmentMeta[];
   handlers: StreamHandlers;
   target?: string;
+  reopenWindow?: () => Promise<void>;
 }): Promise<{ agentId: string; runId: string; status: string }> {
     if (config.backend === "cdp") {
       const prompt = buildPrompt(opts.text, opts.attachments);
@@ -102,6 +103,7 @@ export async function runChatTurn(opts: {
         text: prompt,
         target: opts.target,
         handlers: opts.handlers,
+        reopenWindow: opts.reopenWindow,
       });
     }
 

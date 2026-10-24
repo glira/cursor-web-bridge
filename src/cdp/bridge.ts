@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import type { PendingDecision, StreamHandlers } from "../types.js";
-import { CdpClient } from "./client.js";
+import { CdpClient, CdpClosedError, CdpTimeoutError } from "./client.js";
 import { DECISION_HELPERS_JS, type ClickDecisionResult } from "./decision-dom.js";
 
 const CHAT_INPUT_SELECTORS = [
@@ -496,23 +496,37 @@ export async function runCdpChatTurn(opts: {
   text: string;
   target?: string;
   handlers: StreamHandlers;
+  reopenWindow?: () => Promise<void>;
 }): Promise<{ agentId: string; runId: string; status: string }> {
   const prompt = opts.text.trim();
   if (!prompt) throw new Error("Send text for CDP mode (CDP attachments are not supported yet).");
 
   const needle = opts.target || config.cursorCdpTarget;
   const slot = turnSlot(needle);
-  const { client, target } = await connectToWorkbench(needle);
-  opts.handlers.onStatus(`cdp=${target.title || target.id} (want=${needle})`);
+  let active = await connectToWorkbench(needle);
+  opts.handlers.onStatus(`cdp=${active.target.title || active.target.id} (want=${needle})`);
   slot.active = true;
+  let stalledSince: number | null = null;
+  let stallCount = 0;
+  let lastReopenAt = 0;
 
   try {
-    const before = await snapshotChat(client);
-    await sendPromptToComposer(client, prompt);
+    const before = await snapshotChat(active.client);
+    const sendDeadline = Date.now() + 20_000;
+    for (;;) {
+      try {
+        await sendPromptToComposer(active.client, prompt);
+        break;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/Chat input not found/i.test(message) || Date.now() >= sendDeadline) throw err;
+        await sleep(1000);
+      }
+    }
 
     const waitStart = Date.now();
     while (Date.now() - waitStart < 8_000) {
-      const snap = await snapshotChat(client);
+      const snap = await snapshotChat(active.client);
       if (snap.humanCount > before.humanCount || snap.generating || snap.lastHuman.includes(prompt.slice(0, 40))) {
         break;
       }
@@ -537,8 +551,49 @@ export async function runCdpChatTurn(opts: {
     let endReason = "timeout";
 
     while (Date.now() < deadline) {
-      await flushClickWaiter(client, needle);
-      const snap = await snapshotChat(client);
+      let snap: ChatSnapshot;
+      try {
+        await flushClickWaiter(active.client, needle);
+        snap = await snapshotChat(active.client);
+        stalledSince = null;
+        stallCount = 0;
+      } catch (err) {
+        if (!(err instanceof CdpTimeoutError) && !(err instanceof CdpClosedError)) throw err;
+        if (stalledSince === null) stalledSince = Date.now();
+        stallCount += 1;
+        console.log(
+          `[cdp] snapshot stall n=${stallCount} ${err instanceof Error ? err.message : err}`,
+        );
+        if (Date.now() - stalledSince >= config.cdpStallMaxMs) {
+          endReason = "stall";
+          break;
+        }
+        if (err instanceof CdpClosedError && Date.now() - lastReopenAt > 5_000) {
+          lastReopenAt = Date.now();
+          active.client.disconnect();
+          if (opts.reopenWindow) {
+            try {
+              await opts.reopenWindow();
+            } catch (reopenErr) {
+              console.warn(
+                "[cdp] reopen",
+                reopenErr instanceof Error ? reopenErr.message : reopenErr,
+              );
+            }
+          }
+          try {
+            active = await connectToWorkbench(needle);
+            opts.handlers.onStatus(`cdp=${active.target.title || active.target.id} (want=${needle})`);
+          } catch (connectErr) {
+            console.warn(
+              "[cdp] reconnect",
+              connectErr instanceof Error ? connectErr.message : connectErr,
+            );
+          }
+        }
+        await sleep(config.cdpPollMs);
+        continue;
+      }
       if (snap.generating) sawGenerating = true;
       if (snap.liveWorking) sawLiveWorking = true;
       if (snap.activityLines.length > 0) sawActivityHist = true;
@@ -628,7 +683,11 @@ export async function runCdpChatTurn(opts: {
     }
 
     let status: string;
-    if (endReason === "stable+grace") {
+    if (endReason === "stall") {
+      status = "timeout";
+      opts.handlers.onStatus("Cursor travado ou reiniciando");
+      opts.handlers.onActivity?.(["Cursor travado ou reiniciando"]);
+    } else if (endReason === "stable+grace") {
       status = "finished";
     } else if (!lastAssistant) {
       opts.handlers.onStatus("sem texto assistente detectado (talvez ainda gerando no IDE)");
@@ -652,7 +711,7 @@ export async function runCdpChatTurn(opts: {
     }
 
     return {
-      agentId: `cdp:${target.id}`,
+      agentId: `cdp:${active.target.id}`,
       runId: `cdp-${Date.now()}`,
       status,
     };
@@ -662,7 +721,7 @@ export async function runCdpChatTurn(opts: {
       slot.waiter = null;
     }
     slot.active = false;
-    client.disconnect();
+    active.client.disconnect();
   }
 }
 

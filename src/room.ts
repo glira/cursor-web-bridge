@@ -62,10 +62,12 @@ type RoomRuntime = {
   decisionClaimed: boolean;
   suppressDecisionKey: string;
   suppressDecisionUntil: number;
+  lastActivityAt: number | null;
   subscribers: Map<string, Subscriber>;
 };
 
 const runtimes = new Map<string, RoomRuntime>();
+const processStartedAt = Date.now();
 const statusSubscribers = new Map<string, (event: RoomEvent) => void>();
 const presence = new Map<string, PresenceMember>();
 const rtcPeers = new Map<string, RtcPeer>();
@@ -81,6 +83,7 @@ function runtime(roomId: string): RoomRuntime {
       decisionClaimed: false,
       suppressDecisionKey: "",
       suppressDecisionUntil: 0,
+      lastActivityAt: null,
       subscribers: new Map(),
     };
     runtimes.set(roomId, room);
@@ -94,6 +97,14 @@ function allSubscribers(): Subscriber[] {
 
 export function isRoomBusy(roomId: string): boolean {
   return runtime(roomId).busy;
+}
+
+export function touchRoomActivity(roomId: string): void {
+  runtime(roomId).lastActivityAt = Date.now();
+}
+
+export function roomLastActivityAt(roomId: string): number {
+  return runtimes.get(roomId)?.lastActivityAt ?? processStartedAt;
 }
 
 export function getBusyBy(roomId: string): { clientId: string; displayName: string } | null {

@@ -1,5 +1,23 @@
 type CdpResult = Record<string, unknown>;
 
+export class CdpTimeoutError extends Error {
+  readonly kind = "timeout" as const;
+
+  constructor(method: string, timeoutMs: number) {
+    super(`CDP timeout for ${method} (${timeoutMs}ms)`);
+    this.name = "CdpTimeoutError";
+  }
+}
+
+export class CdpClosedError extends Error {
+  readonly kind = "closed" as const;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "CdpClosedError";
+  }
+}
+
 type Pending = {
   resolve: (value: CdpResult) => void;
   reject: (err: Error) => void;
@@ -57,13 +75,13 @@ export class CdpClient {
   }
 
   async send(method: string, params?: Record<string, unknown>, timeoutMs = 15_000): Promise<CdpResult> {
-    if (!this.ws || !this.connected) throw new Error("CDP client not connected");
+    if (!this.ws || !this.connected) throw new CdpClosedError("CDP client not connected");
 
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`CDP timeout for ${method} (${timeoutMs}ms)`));
+        reject(new CdpTimeoutError(method, timeoutMs));
       }, timeoutMs);
 
       this.pending.set(id, { resolve, reject, timer });
@@ -131,7 +149,7 @@ export class CdpClient {
   private rejectAll(reason: string): void {
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new Error(reason));
+      pending.reject(new CdpClosedError(reason));
       this.pending.delete(id);
     }
   }

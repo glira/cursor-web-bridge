@@ -1,5 +1,5 @@
 import { createRoomRtc } from "./rtc.js";
-import { t, applyI18n } from "./i18n.js?v=7";
+import { t, applyI18n } from "./i18n.js?v=8";
 
 applyI18n();
 
@@ -889,7 +889,8 @@ function connectEvents() {
   es.addEventListener("status", (ev) => {
     try {
       const data = JSON.parse(ev.data);
-      if (data.message) console.debug("[status]", data.message);
+      if (data.code === "opening_window" && data.message) appendSystem(data.message);
+      else if (data.message) console.debug("[status]", data.message);
     } catch {
       /* ignore */
     }

@@ -236,6 +236,8 @@ The bridge does not end the turn just because the first bubble stabilized. While
 
 A frozen window does not end the turn at the first 15 second CDP timeout. The bridge keeps the partial text and tries again. If the debug socket closes, it reopens that tab's window and reconnects. After `CDP_STALL_MAX_MS` (3 minutes) without a successful read, the turn ends as `timeout` with whatever text already arrived.
 
+A new turn is refused when free disk is under `DISK_MIN_FREE_MB`, so a full disk does not leave the room busy. If a history write still fails, the partial line is rolled back and the room is released.
+
 ## `/tmp` downloads
 
 When the agent prints a path such as `/tmp/report.zip` or `file:///tmp/folder/`, the bridge records it on **that tab**, attaches it to the message, and shows a download button. Only paths mentioned in that tab's session can be downloaded. A symlink that escapes `/tmp` is blocked.
@@ -270,6 +272,7 @@ When the agent prints a path such as `/tmp/report.zip` or `file:///tmp/folder/`,
 | `CDP_MAX_TIMEOUT_MS` | Absolute cap for one CDP turn (default `2700000`, 45 min) |
 | `CDP_STALL_MAX_MS` | How long a frozen window can stall one turn before it stops as `timeout` (default `180000`) |
 | `ROOM_IDLE_CLOSE_MIN` | Close extra-tab windows after this many idle minutes. `0` keeps them open |
+| `DISK_MIN_FREE_MB` | Refuse a new turn when free disk is below this many MB (default `500`). `/api/health` reports `diskFreeMb` and is not ok while below the limit |
 | `RTC_STUN_URLS` | STUN for WebRTC |
 | `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | Optional TURN |
 | `TUNNEL_PROVIDER` | `ngrok` or `cloudflare`, used by `./start-local.sh` |

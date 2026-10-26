@@ -36,7 +36,7 @@ async function meminfo(): Promise<{ memAvailableMb: number; swapFreeMb: number }
   return { memAvailableMb: mb("MemAvailable"), swapFreeMb: mb("SwapFree") };
 }
 
-async function diskFreeMb(path: string): Promise<number> {
+export async function diskFreeMb(path: string): Promise<number> {
   const { statfs } = await import("node:fs/promises");
   const stats = await statfs(path);
   return Math.floor((Number(stats.bavail) * Number(stats.bsize)) / (1024 * 1024));

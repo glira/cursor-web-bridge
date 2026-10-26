@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, stat, truncate, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { config } from "./config.js";
 
@@ -112,10 +112,52 @@ export async function loadHistory(roomId: string, limit = HISTORY_PAGE): Promise
   return page.messages;
 }
 
+async function fileSize(path: string): Promise<number> {
+  try {
+    return (await stat(path)).size;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw err;
+  }
+}
+
+/** Roll back a failed append so a half-written line cannot stick to the next one. */
+async function rollbackAppend(path: string, size: number): Promise<void> {
+  try {
+    await truncate(path, size);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
 export async function appendHistory(roomId: string, message: HistoryMessage): Promise<void> {
   const path = historyFile(roomId);
   await mkdir(dirname(path), { recursive: true });
-  await appendFile(path, `${JSON.stringify(message)}\n`, "utf8");
+  let sizeBefore = await fileSize(path);
+  if (sizeBefore > 0) {
+    const fh = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(1);
+      await fh.read(buf, 0, 1, sizeBefore - 1);
+      if (buf[0] !== 0x0a) {
+        try {
+          await appendFile(path, "\n", "utf8");
+        } catch (err) {
+          await rollbackAppend(path, sizeBefore);
+          throw err;
+        }
+        sizeBefore += 1;
+      }
+    } finally {
+      await fh.close();
+    }
+  }
+  try {
+    await appendFile(path, `${JSON.stringify(message)}\n`, "utf8");
+  } catch (err) {
+    await rollbackAppend(path, sizeBefore);
+    throw err;
+  }
   const cache = caches.get(roomId);
   if (cache) cache.push(message);
 }

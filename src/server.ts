@@ -80,6 +80,7 @@ import {
 import {
   checkCapacity,
   createWorkspace,
+  diskFreeMb,
   deleteWorkspace,
   ensureAllWindows,
   ensureRoomWindow,
@@ -270,6 +271,8 @@ app.post("/api/rtc/signal", requireAuth, async (c) => {
 });
 
 app.get("/api/health", async (c) => {
+  const freeMb = await diskFreeMb(config.dataDir);
+  const diskOk = freeMb >= config.diskMinFreeMb;
   if (config.backend === "cdp") {
     const cdp = await checkCdpHealth();
     const rooms = await listRooms();
@@ -282,23 +285,30 @@ app.get("/api/health", async (c) => {
         open: room.status === "ready" ? await cursorWindowOpen(room.cdpTitle) : false,
       });
     }
+    const ok = cdp.ok && diskOk;
     return c.json(
       {
-        ok: cdp.ok,
+        ok,
         backend: "cdp",
         cdp,
         rooms: roomWindows,
+        diskFreeMb: freeMb,
       },
-      cdp.ok ? 200 : 503,
+      ok ? 200 : 503,
     );
   }
 
-  return c.json({
-    ok: Boolean(config.cursorApiKey),
-    backend: "sdk",
-    cwd: config.cursorCwd,
-    model: config.cursorModel,
-  });
+  const ok = Boolean(config.cursorApiKey) && diskOk;
+  return c.json(
+    {
+      ok,
+      backend: "sdk",
+      cwd: config.cursorCwd,
+      model: config.cursorModel,
+      diskFreeMb: freeMb,
+    },
+    ok ? 200 : 503,
+  );
 });
 
 app.get("/api/events", requireAuth, async (c) => {
@@ -589,6 +599,11 @@ app.post("/api/chat", requireAuth, async (c) => {
     );
   }
 
+  const freeMb = await diskFreeMb(config.dataDir);
+  if (freeMb < config.diskMinFreeMb) {
+    return apiError(c, "disk_full", 507);
+  }
+
   setRoomBusy(room.id, { clientId: user.clientId, displayName: user.displayName });
   console.log(
     `[chat] turn start room=${room.id} by=${user.displayName} clientId=${user.clientId.slice(0, 8)}…`,
@@ -602,7 +617,9 @@ app.post("/api/chat", requireAuth, async (c) => {
     }
   } catch (err) {
     setRoomBusy(room.id, null);
-    return c.json({ error: err instanceof Error ? err.message : tApi(localeFromContext(c), "invalid_payload") }, 400);
+    setStreamingMessageId(room.id, null);
+    console.error(`[chat] turn aborted room=${room.id}`, err);
+    return c.json({ error: err instanceof Error ? err.message : tApi(localeFromContext(c), "unknown_error") }, 500);
   }
 
   const preview =
@@ -628,7 +645,17 @@ app.post("/api/chat", requireAuth, async (c) => {
     clientId: user.clientId,
     createdAt: turnStartedAt,
   };
-  await appendHistory(room.id, userMessage);
+  try {
+    await appendHistory(room.id, userMessage);
+  } catch (err) {
+    setRoomBusy(room.id, null);
+    setStreamingMessageId(room.id, null);
+    console.error(`[chat] turn aborted room=${room.id}`, err);
+    return c.json(
+      { error: err instanceof Error ? err.message : tApi(localeFromContext(c), "unknown_error") },
+      500,
+    );
+  }
   broadcast(room.id, { type: "user_message", data: userMessage, at: Date.now() });
 
   const assistantMessageId = newMessageId();
@@ -765,7 +792,14 @@ app.post("/api/chat", requireAuth, async (c) => {
         status: result.status || "finished",
         artifactPaths,
       };
-      await appendHistory(room.id, assistantMessage);
+      try {
+        await appendHistory(room.id, assistantMessage);
+      } catch (err) {
+        console.error(
+          `[chat] history write failed room=${room.id} messageId=${assistantMessageId}`,
+          err,
+        );
+      }
       broadcast(room.id, {
         type: "assistant_done",
         data: {
@@ -789,7 +823,14 @@ app.post("/api/chat", requireAuth, async (c) => {
           status: "error",
           artifactPaths: [...seenPaths],
         };
-        await appendHistory(room.id, partial);
+        try {
+          await appendHistory(room.id, partial);
+        } catch (writeErr) {
+          console.error(
+            `[chat] history write failed room=${room.id} messageId=${assistantMessageId}`,
+            writeErr,
+          );
+        }
         broadcast(room.id, {
           type: "assistant_done",
           data: { message: partial, result: { status: "error" } },

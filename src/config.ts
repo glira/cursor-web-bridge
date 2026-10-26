@@ -62,6 +62,8 @@ export const config = {
   cdpStallMaxMs: Number(process.env.CDP_STALL_MAX_MS || 180_000),
   // Close extra-tab windows after this many idle minutes. 0 disables it.
   roomIdleCloseMin: Number(process.env.ROOM_IDLE_CLOSE_MIN || 0),
+  // Refuse a new turn when the data disk has less than this many MB free.
+  diskMinFreeMb: Number(process.env.DISK_MIN_FREE_MB || 500),
   dataDir: resolve(rootDir, "data"),
   // Inside the agent cwd so local tools can read attachments.
   uploadsDir: resolve(cursorCwd, ".cursor-web-bridge-uploads"),

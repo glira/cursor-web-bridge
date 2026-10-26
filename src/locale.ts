@@ -56,6 +56,7 @@ const messages: Record<UiLocale, Record<string, string>> = {
     workspace_path: "Could not choose a folder for that tab.",
     workspace_failed: "Could not create the tab.",
     opening_window: "Opening window…",
+    disk_full: "The server is out of disk space.",
   },
   pt: {
     too_many_attempts: "Muitas tentativas. Aguarde e tente de novo.",
@@ -110,6 +111,7 @@ const messages: Record<UiLocale, Record<string, string>> = {
     workspace_path: "Não foi possível escolher a pasta dessa aba.",
     workspace_failed: "Não foi possível criar a aba.",
     opening_window: "abrindo janela…",
+    disk_full: "servidor sem espaço em disco",
   },
 };
 
@@ -150,7 +152,7 @@ export function tApi(
 export function apiError(
   c: Context,
   key: string,
-  status: 400 | 401 | 403 | 404 | 409 | 429 | 500,
+  status: 400 | 401 | 403 | 404 | 409 | 429 | 500 | 507,
   vars: Record<string, string> = {},
 ) {
   return c.json({ error: tApi(localeFromContext(c), key, vars) }, status);

@@ -98,6 +98,13 @@ function roomQuery() {
 function updateLiveControls() {
   const on = rtc.isInLive();
   if (livePanel) livePanel.classList.toggle("live-panel--on", on);
+  liveJoinBtn.hidden = on;
+  liveLeaveBtn.hidden = !on;
+  liveMicBtn.disabled = !on;
+  liveCamBtn.disabled = !on;
+  liveMicBtn.textContent = rtc.getMicEnabled() ? t("live.micOn") : t("live.micOff");
+  liveCamBtn.textContent = rtc.getCamEnabled() ? t("live.camOn") : t("live.camOff");
+}
 
 function syncLivePanel() {
   if (livePanel) livePanel.hidden = currentRoom !== liveRoom;
@@ -106,13 +113,6 @@ function syncLivePanel() {
 function firstReadyRoom(list) {
   const ready = list.find((room) => room.status === "ready");
   return (ready || list[0] || {}).id || liveRoom;
-}
-  liveJoinBtn.hidden = on;
-  liveLeaveBtn.hidden = !on;
-  liveMicBtn.disabled = !on;
-  liveCamBtn.disabled = !on;
-  liveMicBtn.textContent = rtc.getMicEnabled() ? t("live.micOn") : t("live.micOff");
-  liveCamBtn.textContent = rtc.getCamEnabled() ? t("live.camOn") : t("live.camOff");
 }
 
 function updateLiveRoster(peers, inLive) {

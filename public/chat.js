@@ -52,6 +52,9 @@ let myClientId = null;
 let myDisplayName = null;
 let myRole = "member";
 let currentRoom = localStorage.getItem("bridgeRoom") || "geral";
+let liveRoom = "geral";
+let canPublish = false;
+const publishBtn = document.getElementById("publish");
 /** @type {{ id: string, title: string, status: string, statusError?: string, busy?: boolean, busyBy?: { displayName?: string } | null, removable?: boolean, sharedDeps?: boolean }[]} */
 let rooms = [];
 /** @type {EventSource | null} */
@@ -95,6 +98,15 @@ function roomQuery() {
 function updateLiveControls() {
   const on = rtc.isInLive();
   if (livePanel) livePanel.classList.toggle("live-panel--on", on);
+
+function syncLivePanel() {
+  if (livePanel) livePanel.hidden = currentRoom !== liveRoom;
+}
+
+function firstReadyRoom(list) {
+  const ready = list.find((room) => room.status === "ready");
+  return (ready || list[0] || {}).id || liveRoom;
+}
   liveJoinBtn.hidden = on;
   liveLeaveBtn.hidden = !on;
   liveMicBtn.disabled = !on;
@@ -831,6 +843,17 @@ function connectEvents() {
     }
   });
 
+  es.addEventListener("system_message", (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      pinToBottom = true;
+      appendSystem(msg.text || "");
+      scrollToBottom(true);
+    } catch {
+      /* ignore */
+    }
+  });
+
   es.addEventListener("assistant_token", (ev) => {
     try {
       const data = JSON.parse(ev.data);
@@ -1184,12 +1207,18 @@ async function ensureAuth() {
   myDisplayName = data.displayName;
   myRole = data.role || "member";
   rooms = Array.isArray(data.rooms) ? data.rooms : [];
-  if (!rooms.some((room) => room.id === currentRoom)) currentRoom = "geral";
+  liveRoom = data.liveRoom || firstReadyRoom(rooms);
+  canPublish = Boolean(data.publish);
+  if (!rooms.some((room) => room.id === currentRoom && room.status === "ready")) {
+    currentRoom = liveRoom;
+    localStorage.setItem("bridgeRoom", currentRoom);
+  }
   meLabel.textContent = data.displayName
     ? t("chat.meRoom", { name: data.displayName })
     : t("chat.sharedRoom");
   adminOpenBtn.hidden = myRole !== "admin";
-  if (livePanel) livePanel.hidden = currentRoom !== "geral";
+  if (publishBtn) publishBtn.hidden = !canPublish;
+  syncLivePanel();
   renderTabs();
   setBusy(data.busy, data.busyBy, "/api/me");
   renderDecision(data.pendingDecision || null);
@@ -1231,7 +1260,7 @@ function renderTabs() {
 
 async function switchRoom(roomId) {
   if (roomId === currentRoom) return;
-  if (currentRoom === "geral" && roomId !== "geral") {
+  if (currentRoom === liveRoom && roomId !== liveRoom) {
     try {
       await rtc.leave();
     } catch {
@@ -1240,7 +1269,7 @@ async function switchRoom(roomId) {
   }
   currentRoom = roomId;
   localStorage.setItem("bridgeRoom", roomId);
-  if (livePanel) livePanel.hidden = currentRoom !== "geral";
+  syncLivePanel();
   hideDecisionCard();
   renderActivity([]);
   stopTurnClock();
@@ -1360,7 +1389,11 @@ async function refreshAdmin() {
           adminError(data.error || t("admin.failed"));
           return;
         }
-        if (currentRoom === room.id) currentRoom = "geral";
+        if (currentRoom === room.id) {
+          const next = rooms.find((item) => item.id !== room.id && item.status === "ready");
+          currentRoom = next?.id || liveRoom;
+          localStorage.setItem("bridgeRoom", currentRoom);
+        }
         await refreshAdmin();
         connectEvents();
       });
@@ -1457,6 +1490,39 @@ async function sendMessage(text, files) {
   if (!res.ok) {
     throw new Error(data.error || `HTTP ${res.status}`);
   }
+}
+
+if (publishBtn) {
+  publishBtn.addEventListener("click", async () => {
+    const message = textEl.value.trim();
+    if (!message) {
+      appendSystem(t("chat.publishNeedMessage"));
+      return;
+    }
+    publishBtn.disabled = true;
+    const previous = publishBtn.textContent;
+    publishBtn.textContent = t("chat.publishing");
+    try {
+      const res = await fetch(`/api/publish?${roomQuery()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, room: currentRoom }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        location.href = "/";
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || t("ui.sendFailed"));
+      textEl.value = "";
+      void publishDraft("");
+    } catch (err) {
+      appendSystem(err instanceof Error ? err.message : t("ui.sendFailed"));
+    } finally {
+      publishBtn.disabled = false;
+      publishBtn.textContent = previous;
+    }
+  });
 }
 
 form.addEventListener("submit", async (e) => {

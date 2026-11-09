@@ -151,7 +151,15 @@ async function writeRooms(rooms: RoomRecord[]): Promise<void> {
 }
 
 export async function listRooms(): Promise<RoomRecord[]> {
-  return readRooms();
+  const rooms = await readRooms();
+  if (!config.geralDisabled) return rooms;
+  return rooms.filter((room) => room.id !== GENERAL_ROOM_ID);
+}
+
+/** First ready tab the panel should open. Geral when it is visible. */
+export async function defaultRoomId(): Promise<string> {
+  const rooms = await listRooms();
+  return rooms.find((room) => room.status === "ready")?.id || rooms[0]?.id || GENERAL_ROOM_ID;
 }
 
 export async function getRoom(id: string): Promise<RoomRecord | null> {

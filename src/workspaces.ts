@@ -123,6 +123,7 @@ async function uniqueSlug(base: string): Promise<{ slug: string; folder: string 
   const used = new Set(rooms.map((room) => room.id));
   for (let n = 0; n < 50; n += 1) {
     const slug = n === 0 ? base : `${base}-${n + 1}`;
+    if (slug === GENERAL_ROOM_ID) continue;
     const folder = resolve(config.workspacesBase, slug);
     if (!folder.startsWith(resolve(config.workspacesBase) + "/")) {
       throw new Error("workspace_path");

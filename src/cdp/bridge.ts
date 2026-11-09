@@ -448,6 +448,16 @@ export async function checkCdpHealth(): Promise<{
       return { ok: false, cdpUrl: config.cursorCdpUrl, wantTarget: config.cursorCdpTarget, error: `HTTP ${versionRes.status} em /json/version` };
     }
     const version = (await versionRes.json()) as { Browser?: string };
+    // Geral is hidden: the debug port is enough. Do not require the CURSOR_CWD window.
+    if (config.geralDisabled) {
+      return {
+        ok: true,
+        cdpUrl: config.cursorCdpUrl,
+        wantTarget: config.cursorCdpTarget,
+        browser: version.Browser,
+        matchMode: "geral-disabled",
+      };
+    }
     const { client, target, windows, matchMode } = await connectToWorkbench();
     try {
       const hasChatInput = await client.evaluate<boolean>(`(() => {

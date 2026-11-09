@@ -67,7 +67,9 @@ import {
 import { apiError, localeFromContext, tApi } from "./locale.js";
 import {
   createUser,
+  defaultRoomId,
   deleteUser,
+  findUserById,
   findUserByUsername,
   GENERAL_ROOM_ID,
   getRoom,
@@ -77,6 +79,7 @@ import {
   verifyPassword,
   type RoomRecord,
 } from "./store.js";
+import { publishFolder } from "./publish.js";
 import {
   checkCapacity,
   createWorkspace,
@@ -96,9 +99,13 @@ function isResponse(value: RoomRecord | Response): value is Response {
 }
 
 async function readyRoom(c: Parameters<typeof apiError>[0], roomId: string): Promise<RoomRecord | Response> {
-  const id = roomId.trim() || GENERAL_ROOM_ID;
+  let id = roomId.trim();
+  if (!id) id = await defaultRoomId();
+  if (config.geralDisabled && id === GENERAL_ROOM_ID) return apiError(c, "room_disabled", 404);
   const room = await getRoom(id);
-  if (!room) return apiError(c, "room_unknown", 404);
+  if (!room || (config.geralDisabled && room.id === GENERAL_ROOM_ID)) {
+    return apiError(c, "room_unknown", 404);
+  }
   if (room.status !== "ready") return apiError(c, "room_not_ready", 409);
   return room;
 }
@@ -181,10 +188,20 @@ app.post("/api/logout", async (c) => {
 
 app.get("/api/me", async (c) => {
   const user = getSessionUser(c);
-  const requested = (c.req.query("room") || GENERAL_ROOM_ID).trim() || GENERAL_ROOM_ID;
+  const account = user ? await findUserById(user.userId) : null;
+  let requested = (c.req.query("room") || "").trim();
+  if (!requested || (config.geralDisabled && requested === GENERAL_ROOM_ID)) {
+    requested = await defaultRoomId();
+  }
   const room = user ? await getRoom(requested) : null;
-  const active = room && room.status === "ready" ? room : null;
+  const active =
+    room && room.status === "ready" && !(config.geralDisabled && room.id === GENERAL_ROOM_ID)
+      ? room
+      : null;
   const rooms = user ? await listRooms() : [];
+  const publish = Boolean(
+    account && config.publishEnabled && config.publishUsers.includes(account.username),
+  );
   return c.json({
     authenticated: Boolean(user),
     backend: config.backend,
@@ -192,6 +209,8 @@ app.get("/api/me", async (c) => {
     userId: user?.userId ?? null,
     role: user?.role ?? null,
     displayName: user?.displayName ?? null,
+    liveRoom: await defaultRoomId(),
+    publish,
     room: active?.id ?? null,
     busy: active ? isRoomBusy(active.id) : false,
     busyBy: active ? getBusyBy(active.id) : null,
@@ -856,6 +875,56 @@ app.post("/api/chat", requireAuth, async (c) => {
   })();
 
   return c.json({ ok: true, messageId: assistantMessageId });
+});
+
+app.post("/api/publish", requireAuth, async (c) => {
+  const user = getSessionUser(c)!;
+  if (!config.publishEnabled) return apiError(c, "publish_disabled", 403);
+  const account = await findUserById(user.userId);
+  if (!account || !config.publishUsers.includes(account.username)) {
+    return apiError(c, "publish_forbidden", 403);
+  }
+
+  let message = "";
+  let roomId = (c.req.query("room") || "").trim();
+  try {
+    const body = await c.req.json<{ message?: string; room?: string }>();
+    message = typeof body.message === "string" ? body.message : "";
+    if (typeof body.room === "string" && body.room.trim()) roomId = body.room.trim();
+  } catch {
+    return apiError(c, "invalid_json", 400);
+  }
+
+  const room = await readyRoom(c, roomId);
+  if (isResponse(room)) return room;
+  if (isRoomBusy(room.id)) {
+    const by = getBusyBy(room.id);
+    return by
+      ? apiError(c, "agent_busy_by", 409, { name: by.displayName })
+      : apiError(c, "agent_busy", 409);
+  }
+
+  setRoomBusy(room.id, { clientId: user.clientId, displayName: user.displayName });
+  try {
+    const output = await publishFolder(room.folder, message);
+    const note = {
+      id: newMessageId(),
+      role: "system" as const,
+      text: `${user.displayName} publicou.\n${output}`,
+      displayName: user.displayName,
+      createdAt: Date.now(),
+    };
+    await appendHistory(room.id, note);
+    broadcast(room.id, { type: "system_message", data: note, at: note.createdAt });
+    console.log(`[publish] room=${room.id} by=${account.username}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    const key = err instanceof Error ? err.message : "unknown_error";
+    console.error(`[publish] room=${room.id} failed`, key);
+    return apiError(c, key, 400);
+  } finally {
+    setRoomBusy(room.id, null);
+  }
 });
 
 app.post("/api/decision", requireAuth, async (c) => {

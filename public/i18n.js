@@ -21,6 +21,9 @@ const dictionaries = {
     "chat.composerPlaceholder":
       "Write a message… (Shift+Enter for a new line). Typing is mirrored live in the room.",
     "chat.attach": "Attach",
+    "chat.publish": "Publish",
+    "chat.publishing": "Publishing…",
+    "chat.publishNeedMessage": "Write the commit message before publishing.",
     "chat.send": "Send",
     "live.micOn": "Mic on",
     "live.micOff": "Mic off",
@@ -117,6 +120,9 @@ const dictionaries = {
     "chat.composerPlaceholder":
       "Escreva sua mensagem… (Shift+Enter para nova linha). Digitação espelhada ao vivo na sala.",
     "chat.attach": "Anexar",
+    "chat.publish": "Publicar",
+    "chat.publishing": "Publicando…",
+    "chat.publishNeedMessage": "Escreva a mensagem do commit antes de publicar.",
     "chat.send": "Enviar",
     "live.micOn": "Mic on",
     "live.micOff": "Mic off",

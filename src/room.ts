@@ -9,6 +9,7 @@ export type RoomEventType =
   | "snapshot"
   | "presence"
   | "user_message"
+  | "system_message"
   | "assistant_token"
   | "assistant_replace"
   | "assistant_done"

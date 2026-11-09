@@ -273,6 +273,10 @@ When the agent prints a path such as `/tmp/report.zip` or `file:///tmp/folder/`,
 | `CDP_STALL_MAX_MS` | How long a frozen window can stall one turn before it stops as `timeout` (default `180000`) |
 | `ROOM_IDLE_CLOSE_MIN` | Close extra-tab windows after this many idle minutes. `0` keeps them open |
 | `DISK_MIN_FREE_MB` | Refuse a new turn when free disk is below this many MB (default `500`). `/api/health` reports `diskFreeMb` and is not ok while below the limit |
+| `BRIDGE_DATA_DIR` | Data directory. Default is `data/` in the checkout, so two bridges can keep separate accounts |
+| `GERAL_DISABLED` | `1` hides the Geral tab, refuses prompts to it, and stops health from requiring that window. Live audio moves to the first remaining tab |
+| `PUBLISH_ENABLED` | `1` shows Publish. It runs `git add -A`, commits the typed message, and pushes `HEAD` to `main` in that tab's folder |
+| `PUBLISH_USERS` | Comma-separated usernames allowed to publish |
 | `RTC_STUN_URLS` | STUN for WebRTC |
 | `RTC_TURN_URLS` / `RTC_TURN_USER` / `RTC_TURN_PASS` | Optional TURN |
 | `TUNNEL_PROVIDER` | `ngrok` or `cloudflare`, used by `./start-local.sh` |

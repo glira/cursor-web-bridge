@@ -23,6 +23,7 @@ const backendRaw = (process.env.BRIDGE_BACKEND || "cdp").trim().toLowerCase();
 const backend = backendRaw === "sdk" ? "sdk" : "cdp";
 
 const cursorCwd = resolve(process.env.CURSOR_CWD || process.cwd());
+const dataDir = resolve(process.env.BRIDGE_DATA_DIR?.trim() || resolve(rootDir, "data"));
 
 export const config = {
   rootDir,
@@ -64,13 +65,21 @@ export const config = {
   roomIdleCloseMin: Number(process.env.ROOM_IDLE_CLOSE_MIN || 0),
   // Refuse a new turn when the data disk has less than this many MB free.
   diskMinFreeMb: Number(process.env.DISK_MIN_FREE_MB || 500),
-  dataDir: resolve(rootDir, "data"),
+  // Hide the fixed Geral tab. Extra tabs stay. The Cursor window for CURSOR_CWD can stay open.
+  geralDisabled: process.env.GERAL_DISABLED === "1",
+  // Commit and push the active tab. Off unless both are set.
+  publishEnabled: process.env.PUBLISH_ENABLED === "1",
+  publishUsers: (process.env.PUBLISH_USERS || "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean),
+  dataDir,
   // Inside the agent cwd so local tools can read attachments.
   uploadsDir: resolve(cursorCwd, ".cursor-web-bridge-uploads"),
   publicDir: resolve(rootDir, "public"),
-  agentIdPath: resolve(rootDir, "data", "agent-id.json"),
-  historyPath: resolve(rootDir, "data", "room-history.jsonl"),
-  artifactsPath: resolve(rootDir, "data", "artifacts.json"),
+  agentIdPath: resolve(dataDir, "agent-id.json"),
+  historyPath: resolve(dataDir, "room-history.jsonl"),
+  artifactsPath: resolve(dataDir, "artifacts.json"),
   cookieName: "bridge_session",
   maxUploadBytes: 10 * 1024 * 1024,
   rtcIceServers: buildIceServers(),

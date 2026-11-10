@@ -330,10 +330,13 @@ function updateBubbleMeta(messageId) {
   if (!metaEl) {
     metaEl = document.createElement("div");
     metaEl.className = "bubble-meta";
-    el.appendChild(metaEl);
+    const foot = el.querySelector(".bubble-foot");
+    if (foot) foot.insertBefore(metaEl, foot.firstChild);
+    else el.appendChild(metaEl);
   }
   metaEl.textContent = buildMetaText(messageMeta.get(messageId));
   syncDeleteControl(messageId);
+  syncCopyControl(messageId);
 }
 
 function ensureDownloadsContainer(messageId) {
@@ -343,8 +346,10 @@ function ensureDownloadsContainer(messageId) {
   if (!box) {
     box = document.createElement("div");
     box.className = "bubble-downloads";
+    const foot = el.querySelector(".bubble-foot");
     const meta = el.querySelector(".bubble-meta");
-    if (meta) el.insertBefore(box, meta);
+    if (foot) el.insertBefore(box, foot);
+    else if (meta) el.insertBefore(box, meta);
     else el.appendChild(box);
   }
   return box;
@@ -433,7 +438,24 @@ function ensureBubble(message, opts = {}) {
 
   const metaEl = document.createElement("div");
   metaEl.className = "bubble-meta";
-  el.appendChild(metaEl);
+  if (message.role === "assistant") {
+    const foot = document.createElement("div");
+    foot.className = "bubble-foot";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "ghost bubble-copy";
+    copy.textContent = t("copy.button");
+    copy.hidden = Boolean(message.running);
+    copy.addEventListener("click", (e) => {
+      e.preventDefault();
+      void copyBubbleText(message.id, copy);
+    });
+    foot.appendChild(metaEl);
+    foot.appendChild(copy);
+    el.appendChild(foot);
+  } else {
+    el.appendChild(metaEl);
+  }
 
   const parent = opts.parent || messagesEl;
   parent.appendChild(el);
@@ -1056,6 +1078,61 @@ function syncDeleteControl(messageId) {
   const btn = el.querySelector(".bubble-delete");
   if (!btn) return;
   btn.hidden = Boolean(messageMeta.get(messageId)?.running);
+}
+
+const copyResetTimers = new WeakMap();
+
+function syncCopyControl(messageId) {
+  const el = bubbleById.get(messageId);
+  if (!el) return;
+  const btn = el.querySelector(".bubble-copy");
+  if (!btn) return;
+  btn.hidden = Boolean(messageMeta.get(messageId)?.running);
+}
+
+function flashCopyLabel(btn, key) {
+  const prev = copyResetTimers.get(btn);
+  if (prev) clearTimeout(prev);
+  btn.textContent = t(key);
+  const timer = setTimeout(() => {
+    btn.textContent = t("copy.button");
+    copyResetTimers.delete(btn);
+  }, 1500);
+  copyResetTimers.set(btn, timer);
+}
+
+function fallbackCopy(text) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.left = "-9999px";
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  area.remove();
+  if (!ok) throw new Error("copy failed");
+}
+
+async function copyBubbleText(messageId, btn) {
+  const el = bubbleById.get(messageId);
+  const text = el?.querySelector(".bubble-body")?.textContent || "";
+  if (!text) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      fallbackCopy(text);
+    }
+    flashCopyLabel(btn, "copy.done");
+  } catch {
+    try {
+      fallbackCopy(text);
+      flashCopyLabel(btn, "copy.done");
+    } catch {
+      flashCopyLabel(btn, "copy.failed");
+    }
+  }
 }
 
 function applyMessageDeleted(messageId, deletedBy) {

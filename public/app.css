@@ -484,6 +484,16 @@ button.danger {
   white-space: pre-wrap;
 }
 
+.bubble-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
 .bubble-meta {
   font-size: 0.72rem;
   color: var(--muted);
@@ -491,6 +501,20 @@ button.danger {
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   padding-top: 8px;
   margin-top: 2px;
+}
+
+.bubble-foot .bubble-meta {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.bubble-copy {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .bubble-downloads {
